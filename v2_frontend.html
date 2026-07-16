@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>V2.0 Test</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; padding: 5px; margin: 0; }
+  .row { display: flex; gap: 8px; margin: 5px 0; flex-wrap: wrap; align-items: center; }
+  button { padding: 6px 14px; cursor: pointer; font-size: 13px; }
+  .panels { display: flex; gap: 4px; }
+  .panel { flex: 1; position: relative; border: 2px solid #333; max-width: 32%; }
+  .panel img { width: 100%; display: block; cursor: crosshair; }
+  .panel canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  .panel .lbl { position: absolute; top: 2px; left: 4px; color: #ff0; font-size: 11px; pointer-events: none; }
+  #result { background: #1a1a2a; padding: 8px; border-radius: 4px; font-size: 13px; margin-top: 5px; }
+  #status { color: #ff0; }
+</style>
+</head>
+<body>
+<h3>V2.0 Stereo Test</h3>
+<div class="row">
+  <button onclick="preview()">Preview</button>
+  <button onclick="capture()">Capture</button>
+  <button onclick="resetPts()">Reset</button>
+  <button onclick="doResetAll()">New Capture</button>
+  <span id="status">Ready</span>
+  <span style="color:#888">| L/R correction auto-saved to feedback/</span>
+  <span id="fbCount" style="color:#0ff"></span>
+</div>
+
+<div class="panels">
+  <div class="panel" id="panel-left"><div class="lbl">LEFT</div><img id="img-l"><canvas id="cv-l"></canvas></div>
+  <div class="panel" id="panel-center"><div class="lbl">CENTER</div><img id="img-c"><canvas id="cv-c"></canvas></div>
+  <div class="panel" id="panel-right"><div class="lbl">RIGHT</div><img id="img-r"><canvas id="cv-r"></canvas></div>
+</div>
+
+<div id="result"></div>
+
+<script>
+var w=0, h=0, pts=[], activeGroup=null;
+var autoLeft=null, autoRight=null, lineLeft=null, lineRight=null;
+var imgs={left:new Image(), center:new Image(), right:new Image()};
+
+function preview(){ document.getElementById('img-c').src='/api/preview?t='+Date.now(); document.getElementById('status').textContent='Preview'; }
+function loadImg(cam){ var i=imgs[cam]; i.src='/api/image/'+cam+'?t='+Date.now(); return i; }
+
+var centerImg = loadImg('center');
+centerImg.onload = function(){ document.getElementById('img-c').src = centerImg.src; };
+
+async function capture(){
+  document.getElementById('status').textContent='Capturing...';
+  var r = await fetch('/api/capture',{method:'POST'}); var d = await r.json();
+  if(d.error){alert(d.error);return}
+  w=d.w; h=d.h;
+  imgs.left.src='/api/image/left?t='+Date.now();
+  imgs.center.src='/api/image/center?t='+Date.now();
+  imgs.right.src='/api/image/right?t='+Date.now();
+  document.getElementById('img-l').src = imgs.left.src;
+  document.getElementById('img-c').src = imgs.center.src;
+  document.getElementById('img-r').src = imgs.right.src;
+  document.getElementById('status').textContent='Captured. Click CENTER pupil.';
+  pts=[]; activeGroup=null; autoLeft=autoRight=lineLeft=lineRight=null;
+  drawAll();
+}
+
+async function clickCenter(e){
+  if(!w){ document.getElementById('status').textContent='w='+w+' h='+h+'; not captured?'; return; }
+  var rect = this.getBoundingClientRect();
+  var dw = rect.width; var dh = rect.height;
+  var cx = Math.round((e.clientX-rect.left)*w/dw);
+  var cy = Math.round((e.clientY-rect.top)*h/dh);
+  
+  document.getElementById('status').textContent = 'Matching ('+cx+','+cy+')...';
+  try {
+    var r = await fetch('/api/match',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cx:cx,cy:cy})});
+    var d = await r.json();
+  } catch(e) {
+    document.getElementById('status').textContent = 'API error: '+e.message;
+    return;
+  }
+  if(d.error){ document.getElementById('status').textContent = 'Error: '+d.error; return; }
+  
+  var g = {cx:cx, cy:cy, lx: d.left?d.left.x:cx, ly: d.left?d.left.y:cy,
+           rx: d.right?d.right.x:cx, ry: d.right?d.right.y:cy,
+           auto_lx: d.left?d.left.x:0, auto_ly: d.left?d.left.y:0,
+           auto_rx: d.right?d.right.x:0, auto_ry: d.right?d.right.y:0};
+  activeGroup = g;
+  pts.push(g);
+  updatePD();
+  drawAll();
+  document.getElementById('status').textContent = 'Done. pts='+pts.length+' canvas='+document.getElementById('cv-c').width;
+}
+
+async function clickSide(side, e){
+  if(!w || !activeGroup) return;
+  var rect = this.getBoundingClientRect();
+  var dw = rect.width; var dh = rect.height;
+  var sx = Math.round((e.clientX-rect.left)*w/dw);
+  var sy = Math.round((e.clientY-rect.top)*h/dh);
+  if(side==='left'){ activeGroup.lx=sx; activeGroup.ly=sy; }
+  else{ activeGroup.rx=sx; activeGroup.ry=sy; }
+  drawAll();  // Update display immediately
+  
+  // Send feedback (non-blocking)
+  var fb = {cx:activeGroup.cx, cy:activeGroup.cy, side:side,
+            auto: side==='left'? {x:activeGroup.auto_lx, y:activeGroup.auto_ly} : {x:activeGroup.auto_rx, y:activeGroup.auto_ry},
+            fixed: {x:sx, y:sy}};
+  fetch('/api/feedback',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(fb)}).then(function(){
+    var cnt = (parseInt(document.getElementById('fbCount').textContent)||0)+1;
+    document.getElementById('fbCount').textContent = cnt+' fixes';
+  });
+  updatePD();  // Compute PD async
+}
+
+async function resetPts() {
+  pts = []; activeGroup = null;
+  drawAll(); document.getElementById('result').innerHTML = '';
+  document.getElementById('status').textContent = 'Cleared. Re-annotate.';
+}
+
+async function doResetAll() {
+  pts = []; activeGroup = null;
+  drawAll(); document.getElementById('result').innerHTML = '';
+  capture();
+}
+
+async function updatePD() {
+  var g = pts[pts.length-1];
+  var r = await fetch('/api/tri',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({lx:g.lx,ly:g.ly,cx:g.cx,cy:g.cy,rx:g.rx,ry:g.ry})});
+  var d = await r.json();
+  g['3d'] = d['3d'];
+  var html = '';
+  for(var i=0; i<pts.length; i++){
+    var p = pts[i];
+    html += 'P'+(i+1)+': C('+p.cx+','+p.cy+') 3D=['+(p['3d']||[0,0,0]).map(function(v){return v.toFixed(0)}).join(',')+']<br>';
+  }
+  if(pts.length>=2){
+    var p1=pts[pts.length-2]['3d'], p2=pts[pts.length-1]['3d'];
+    var dx=p2[0]-p1[0], dy=p2[1]-p1[1], dz=p2[2]-p1[2];
+    var pd=Math.sqrt(dx*dx+dy*dy+dz*dz);
+    html+='<b style="color:#0f0;font-size:16px">PD: '+pd.toFixed(1)+'mm</b>';
+  }
+  document.getElementById('result').innerHTML = html;
+}
+
+function drawAll(){
+  var panels = document.querySelectorAll('.panel img');
+  var pw = panels[0] ? panels[0].getBoundingClientRect().width : 400;
+  var ph = Math.round(pw * h / w);
+  document.getElementById('status').textContent += ' | canvas:'+pw+'x'+ph;
+  if (!pw || !ph || pw < 10) { return; }
+  
+  ['l','c','r'].forEach(function(side, i){
+    var cvs = document.getElementById('cv-'+side);
+    cvs.width = pw; cvs.height = ph;
+    var ctx = cvs.getContext('2d');
+    ctx.clearRect(0, 0, pw, ph);
+    
+    for(var pi=0; pi<pts.length; pi++){
+      var p = pts[pi];
+      var px, py;
+      if(side === 'l'){ px = p.lx; py = p.ly; }
+      else if(side === 'c'){ px = p.cx; py = p.cy; }
+      else{ px = p.rx; py = p.ry; }
+      if(px <= 0 && py <= 0) continue;
+      var dx = Math.round(px * pw / w);
+      var dy = Math.round(py * ph / h);
+      ctx.strokeStyle = pi === pts.length-1 ? '#0f0' : '#0a0';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(dx, dy, 14, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = '#0f0';
+      ctx.fillText('P'+(pi+1), dx+16, dy-12);
+    }
+  });
+}
+
+document.getElementById('img-c').addEventListener('click', clickCenter);
+document.getElementById('img-l').addEventListener('click', function(e){ clickSide.call(this, 'left', e); });
+document.getElementById('img-r').addEventListener('click', function(e){ clickSide.call(this, 'right', e); });
+
+preview();
+</script>
+</body>
+</html>
