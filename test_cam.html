@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<body>
+<video id="v" autoplay style="width:640px;"></video>
+<br><span id="s"></span>
+<script>
+navigator.mediaDevices.getUserMedia({video:{width:1920,height:1080}}).then(function(s){
+  document.getElementById('v').srcObject=s;
+  var t=s.getVideoTracks()[0];
+  document.getElementById('s').textContent='OK: '+t.getSettings().width+'x'+t.getSettings().height;
+}).catch(function(e){
+  document.getElementById('s').textContent='Error: '+e.message;
+});
+</script>
+</body>
+</html>
