@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>摄像头参数检测</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+  h2 { color: #0ff; }
+  .info { color: #ff0; }
+  .warn { color: #f80; }
+  .err { color: #f44; }
+  button { margin: 3px 0; cursor: pointer; }
+  pre { margin: 2px 0; font-size:13px; }
+</style>
+</head>
+<body>
+<h2>摄像头参数检测 — 本地测试</h2>
+<button onclick="detectAll()">🔍 扫描所有摄像头参数</button>
+<button onclick="openPreview(0)">📷 预览摄像头 #0</button>
+<select id="camSel" style="display:none;"></select>
+<video id="preview" autoplay playsinline style="display:none;width:100%;max-width:640px;border:2px solid #0f0;margin-top:10px;"></video>
+<div id="output"></div>
+
+<script>
+function log(msg, cls) { document.getElementById('output').innerHTML += '<pre class="'+(cls||'')+'">'+msg+'</pre>'; }
+
+async function detectAll() {
+  document.getElementById('output').innerHTML = '';
+  log('正在扫描...', 'info');
+
+  try {
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+    log('找到 ' + cams.length + ' 个视频设备', 'info');
+    if (cams.length === 0) { log('未检测到摄像头！请确认已连接并已授权。', 'warn'); return; }
+
+    var sel = document.getElementById('camSel');
+    sel.innerHTML = '';
+    sel.style.display = 'block';
+
+    for (var i = 0; i < cams.length; i++) {
+      log('──────────────────────────────', '');
+      log('设备 #' + i + ': ' + (cams[i].label || '(无标签)'), 'info');
+
+      // 方法1: 不指定deviceId，让浏览器任意选（如果有多个）
+      // 方法2: 直接用 deviceId 作为约束的 ideal（不是 exact）
+      try {
+        var stream = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { ideal: cams[i].deviceId }, width: 3840, height: 2160 }
+        });
+        var t = stream.getVideoTracks()[0];
+        var s = t.getSettings();
+        log('  请求3840×2160 → 实际: ' + s.width + '×' + s.height + ' @' + (s.frameRate||'?') + 'fps | 像素比:' + (s.aspectRatio||'?'), 'info');
+        
+        // 获取能力范围
+        try { var cap = t.getCapabilities ? t.getCapabilities() : null; if (cap) { log('  width 范围: ' + (cap.width?cap.width.min:'?') + ' ~ ' + (cap.width?cap.width.max:'?'), ''); log('  height 范围: ' + (cap.height?cap.height.min:'?') + ' ~ ' + (cap.height?cap.height.max:'?'), ''); log('  frameRate: ' + (cap.frameRate?cap.frameRate.min:'?') + ' ~ ' + (cap.frameRate?cap.frameRate.max:'?') + ' fps', ''); } } catch(e) {}
+        t.stop();
+        sel.innerHTML += '<option value="'+i+'">📷 设备#'+i+': '+s.width+'×'+s.height+' @'+Math.round(s.frameRate||0)+'fps</option>';
+      } catch(e2) {
+        // 4K 不行，降级试试
+        log('  4K 不支持 (' + e2.name + ')，尝试 1920×1080...', 'warn');
+        try {
+          var stream2 = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { ideal: cams[i].deviceId }, width: 1920, height: 1080 }
+          });
+          var t2 = stream2.getVideoTracks()[0];
+          var s2 = t2.getSettings();
+          log('  实际: ' + s2.width + '×' + s2.height + ' @' + (s2.frameRate||'?') + 'fps', 'info');
+          t2.stop();
+          sel.innerHTML += '<option value="'+i+'">📷 设备#'+i+': '+s2.width+'×'+s2.height+'</option>';
+        } catch(e3) {
+          log('  1080P 也不支持: ' + e3.name, 'err');
+        }
+      }
+    }
+  } catch(e) {
+    log('错误: ' + e.message + ' (浏览器可能没授权摄像头)', 'err');
+  }
+}
+
+async function openPreview(idx) {
+  try {
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+    if (idx >= cams.length) { log('摄像头 #' + idx + ' 不存在', 'warn'); return; }
+
+    var stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { ideal: cams[idx].deviceId }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+    });
+    var video = document.getElementById('preview');
+    video.srcObject = stream;
+    video.style.display = 'block';
+    var s = stream.getVideoTracks()[0].getSettings();
+    log('预览中: ' + s.width + '×' + s.height + ' @' + (s.frameRate||'?') + 'fps', 'info');
+  } catch(e) {
+    log('打开失败: ' + e.message, 'err');
+  }
+}
+</script>
+</body>
+</html>
