@@ -1,0 +1,73 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><title>V2.0</title>
+<style>
+body{font-family:monospace;background:#111;color:#0f0;padding:5px;margin:0}
+.bar{display:flex;gap:5px;align-items:center;margin:3px 0}
+button{padding:5px 12px;cursor:pointer;font-size:12px;border:1px solid #4a90d9;background:#1a1a2e;color:#4a90d9;border-radius:3px}
+button:hover{background:#4a90d9;color:#fff}
+button.p{background:#4a90d9;color:#fff}
+canvas{border:2px solid #333;display:block;cursor:crosshair;max-width:100%}
+#st{font-size:12px;color:#ff0}
+#r{background:#1a1a2a;padding:5px 8px;border-radius:3px;font-size:12px;margin-top:3px}
+</style>
+</head>
+<body>
+<h4>OpticalMeasure V2.0</h4>
+<div class=bar>
+  <button onclick=preview()>Preview</button>
+  <button class=p onclick=capture()>Capture</button>
+  <button onclick=reset()>Reset</button>
+  <span id=st>Ready</span>
+</div>
+<canvas id=c></canvas>
+<div id=r></div>
+
+<script>
+var W=0,H=0,img=new Image(),pts=[],step=0;
+var c=document.getElementById('c'),x=c.getContext('2d');
+
+function preview(){img=new Image();img.onload=function(){c.width=img.width;c.height=img.height;x.drawImage(img,0,0)};img.src='/api/preview?t='+Date.now();document.getElementById('st').textContent='Preview'}
+async function capture(){document.getElementById('st').textContent='Capturing...';var d=await(await fetch('/api/capture',{method:'POST'})).json();if(d.error){alert(d.error);return}W=d.w;H=d.h;pts=[];step=0;img=new Image();img.onload=function(){c.width=1200;c.height=Math.round(1200*H/W);draw();document.getElementById('st').textContent='Step 1/4: Click right pupil'};img.src='/api/image/center?t='+Date.now()}
+function reset(){pts=[];step=0;drag=0;ds=null;de=null;deye=null;draw();document.getElementById('st').textContent='Reset';document.getElementById('r').innerHTML=''}
+async function match(xx,yy){try{var d=await(await fetch('/api/match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cx:xx,cy:yy})})).json();return{lx:d.left?d.left.x:xx,ly:d.left?d.left.y:yy,rx:d.right?d.right.x:xx,ry:d.right?d.right.y:yy,p3d:d['3d']}}catch(e){return{lx:xx,ly:yy,rx:xx,ry:yy,p3d:[0,0,0]}}}
+
+function draw(){
+  x.drawImage(img,0,0,c.width,c.height);
+  // Draw all points
+  for(var i=0;i<pts.length;i++){var p=pts[i],sx=p.cx*c.width/W,sy=p.cy*c.height/H;
+    if(p.id.indexOf('pupil')>=0){x.strokeStyle='#fff';x.lineWidth=2;x.beginPath();x.arc(sx,sy,22,0,6.283);x.stroke();x.strokeStyle='#ff0';x.lineWidth=1;x.beginPath();x.arc(sx,sy,7,0,6.283);x.stroke();x.strokeStyle='#f00';x.lineWidth=1.5;x.beginPath();x.moveTo(sx-27,sy);x.lineTo(sx+27,sy);x.moveTo(sx,sy-27);x.lineTo(sx,sy+27);x.stroke();x.fillStyle='#f00';x.beginPath();x.arc(sx,sy,3,0,6.283);x.fill()}
+  }
+  // Frame boxes
+  for(var ei=0;ei<2;ei++){var eye=ei===0?'right':'left';var t=pts.filter(function(p){return p.id===eye+'_frame_top'})[0],b=pts.filter(function(p){return p.id===eye+'_frame_bottom'})[0],inn=pts.filter(function(p){return p.id===eye+'_frame_inner'})[0],out=pts.filter(function(p){return p.id===eye+'_frame_outer'})[0];if(t&&b&&inn&&out){var lx=Math.min(inn.cx,out.cx)*c.width/W,rx=Math.max(inn.cx,out.cx)*c.width/W,ty=t.cy*c.height/H,by=b.cy*c.height/H;x.fillStyle='rgba(74,144,217,.08)';x.fillRect(lx,ty,rx-lx,by-ty);x.strokeStyle='#4A90D9';x.lineWidth=1.5;x.strokeRect(lx,ty,rx-lx,by-ty)}}
+  // Drag preview
+  if(drag&&ds&&de){var x1=Math.min(ds.x,de.x),x2=Math.max(ds.x,de.x),y1=Math.min(ds.y,de.y),y2=Math.max(ds.y,de.y);x.strokeStyle='#0f0';x.lineWidth=2;x.setLineDash([5,3]);x.strokeRect(x1,y1,x2-x1,y2-y1);x.setLineDash([])}
+  // Hint
+  var hints=['Click RIGHT pupil','Click LEFT pupil','Drag RIGHT frame','Drag LEFT frame'];
+  if(step<4)x.fillStyle='#ff0',x.font='14px monospace',x.fillText('Step '+(step+1)+'/4: '+hints[step],10,c.height-10);
+  // PD
+  var rp=pts.filter(function(p){return p.id==='right_pupil'})[0],lp=pts.filter(function(p){return p.id==='left_pupil'})[0];
+  if(rp&&lp&&rp.p3d&&lp.p3d){var dx=lp.p3d[0]-rp.p3d[0],dy=lp.p3d[1]-rp.p3d[1],pd=Math.sqrt(dx*dx+dy*dy);x.fillStyle='#0f0';x.font='bold 14px monospace';x.fillText('PD:'+pd.toFixed(1)+'mm',c.width-170,22)}
+}
+
+var drag=0,ds=null,de=null,deye=null;
+c.onmousedown=async function(e){
+  var r=c.getBoundingClientRect(),cx=Math.round((e.clientX-r.left)*W/c.width),cy=Math.round((e.clientY-r.top)*H/c.height);
+  if(step>=4)return;
+  if(step<2){var id=step===0?'right_pupil':'left_pupil';document.getElementById('st').textContent='Matching...';var m=await match(cx,cy);pts.push({id:id,cx:cx,cy:cy,lx:m.lx,ly:m.ly,rx:m.rx,ry:m.ry,p3d:m.p3d});step++;document.getElementById('st').textContent='Step '+step+'/4 C('+cx+','+cy+') L('+m.lx+','+m.ly+') R('+m.rx+','+m.ry+') Z='+(m.p3d[2]||0).toFixed(0);showR();draw()}
+  else{drag=1;deye=step===2?'right':'left';ds={x:cx,y:cy};de={x:cx,y:cy}}
+};
+c.onmousemove=function(e){if(!drag)return;var r=c.getBoundingClientRect();de={x:Math.round((e.clientX-r.left)*W/c.width),y:Math.round((e.clientY-r.top)*H/c.height)};draw()};
+c.onmouseup=async function(){if(!drag)return;drag=0;var eye=deye;deye=null;var lx=Math.min(ds.x,de.x),rx=Math.max(ds.x,de.x),ty=Math.min(ds.y,de.y),by=Math.max(ds.y,de.y),mx=(lx+rx)/2,my=(ty+by)/2,nx=eye==='right'?rx:lx,ox=eye==='right'?lx:rx;document.getElementById('st').textContent='Matching frame...';var batch=[],corners=[[eye+'_frame_top',mx,ty],[eye+'_frame_bottom',mx,by],[eye+'_frame_inner',nx,my],[eye+'_frame_outer',ox,my]];for(var ci=0;ci<4;ci++){var m=await match(corners[ci][1],corners[ci][2]);batch.push({id:corners[ci][0],cx:corners[ci][1],cy:corners[ci][2],lx:m.lx,ly:m.ly,rx:m.rx,ry:m.ry,p3d:m.p3d})}pts=pts.concat(batch);step++;document.getElementById('st').textContent=step>=4?'All done!':'Step '+(step+1)+'/4';showR();draw()};
+
+function showR(){
+  var rp=pts.filter(function(p){return p.id==='right_pupil'})[0],lp=pts.filter(function(p){return p.id==='left_pupil'})[0],h='';
+  if(rp&&lp&&rp.p3d&&lp.p3d){var dx=lp.p3d[0]-rp.p3d[0],dy=lp.p3d[1]-rp.p3d[1],pd=Math.sqrt(dx*dx+dy*dy);h='<b>PD:'+pd.toFixed(1)+'mm</b>';}
+  document.getElementById('r').innerHTML=h;
+}
+
+preview();
+</script>
+</body>
+</html>
