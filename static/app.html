@@ -1,0 +1,112 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><title>OpticalMeasure V2.0</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+</head>
+<body>
+<div class=bar>
+  <span style="position:relative;display:inline-block">
+    <button onclick=toggleCustList() style="border-color:#888;color:#888;min-width:80px" id=btnCust>客户 ▾</button>
+    <div id=custDrop style="display:none;position:absolute;top:100%;left:0;background:#222;border:1px solid #444;border-radius:4px;z-index:300;min-width:200px;max-height:300px;overflow-y:auto;padding:4px">
+      <input id=custSearch placeholder=搜索客户... style="width:100%;box-sizing:border-box;background:#333;border:1px solid #555;color:#ccc;padding:4px 6px;margin-bottom:4px;border-radius:3px" oninput=searchCustomers()>
+      <div id=custList></div>
+      <div style="border-top:1px solid #444;margin-top:4px;padding-top:4px">
+        <input id=custNewName placeholder=新客户姓名 style="width:100%;box-sizing:border-box;background:#333;border:1px solid #555;color:#ccc;padding:4px 6px;border-radius:3px">
+        <button onclick=createCustomer() style="background:#f0ad4e;color:#000;border:none;padding:4px 8px;border-radius:3px;margin-top:4px;width:100%;cursor:pointer">+ 新建</button>
+      </div>
+    </div>
+  </span>
+  <button onclick=prepare() style="border-color:#f0ad4e;color:#f0ad4e">Prepare</button>
+  <button class=p onclick=captureFront() id=btnCap disabled>拍照正面</button>
+  <button onclick=captureSide() style="border-color:#f0ad4e;color:#f0ad4e" id=btnCapSide disabled>拍照侧面</button>
+  <button onclick=switchAnnotation('f') id=btnAnnotF>标注正面</button>
+  <button onclick=switchAnnotation('s') id=btnAnnotS disabled>标注侧面</button>
+  <button onclick=compute() style="background:#f0ad4e;color:#000;border-color:#f0ad4e">计算</button>
+  <button onclick=review() style="border-color:#f0ad4e;color:#f0ad4e" id=btnReview disabled>复核</button>
+  <button onclick=report() style="border-color:#f0ad4e;color:#f0ad4e">报告</button>
+  <button onclick=toggleSettings() style="border-color:#888;color:#888">设置</button>
+  <button onclick=toggleCustView() style="border-color:#888;color:#888" id=btnHistory>历史</button>
+  <span id=st>Ready</span>
+</div>
+<div id=main>
+  <div id=cc>
+    <canvas id=cv></canvas>
+    <div id=hint>Step 1/4: Click RIGHT pupil</div>
+  </div>
+  <div id=capOverlay><span>拍照中</span><div id=capDots><span></span><span></span><span></span></div></div>
+  <div id=panel>
+    <div class=sec><h4>Results</h4>
+      <div class=row><span class=l>PD</span><span class=v id=vp>--</span></div>
+      <div class=row><span class=l>RPD</span><span class=v id=vr>--</span></div>
+      <div class=row><span class=l>LPD</span><span class=v id=vl>--</span></div>
+      <div class=row><span class=l>Right PH</span><span class=v id=vpr>--</span></div>
+      <div class=row><span class=l>Left PH</span><span class=v id=vpl>--</span></div>
+      <div class=row><span class=l>片宽</span><span class=v id=vw>--</span></div>
+      <div class=row><span class=l>片高</span><span class=v id=vh>--</span></div>
+      <div class=row><span class=l>中梁</span><span class=v id=vb>--</span></div>
+      <div class=row><span class=l>前倾角</span><span class=v id=va>--</span></div>
+      <div class=row><span class=l>镜眼距</span><span class=v id=vd>--</span></div>
+    </div>
+    <button onclick=saveToCustomer() style="background:#f0ad4e;color:#000;border:none;padding:4px 10px;margin-top:8px;border-radius:3px;cursor:pointer;font-size:13px;width:100%">保存到客户档案</button>
+  </div>
+</div>
+<div id=sta><span>Scale:<span id=ss>100%</span></span><span>Pos:<span id=sp>(0,0)</span></span><span>Size:<span id=sz>--</span></span><span>Step:<span id=sm>0/4</span></span></div>
+<div id=modal><div id=rpt>
+  <button id=rclose onclick="document.getElementById('modal').classList.remove('show')">&times;</button>
+  <h2>旧时候眼镜店 戴镜测量AI分析报告</h2>
+  <div id=rsub>OpticalMeasure V2.0</div>
+  <hr class=report-sep>
+  <div id=rimg></div>
+  <hr class=report-sep>
+  <h3 style="font-size:15px;margin-bottom:6px">&#x1F4CA; 测量数据</h3>
+  <table class=report-table id=rtable></table>
+  <h3 style="font-size:15px;margin:10px 0 6px">&#x1F4DD; 配镜建议</h3>
+  <ul class=report-suggestions id=rsug></ul>
+  <hr class=report-sep>
+  <div class=report-footer>
+    <div>测量编号：<span id=rid>--</span></div>
+    <div>测量日期：<span id=rdt>--</span></div>
+    <div>测量工具：OpticalMeasure V2.0</div>
+    <div>操作人员：________</div>
+  </div>
+  <div class=report-note>&#x26A0; 本测量基于照片分析，建议结合专业设备复核确认。</div>
+  <button id=rsave onclick=saveReport()>&#x1F4BE; 保存报告图片 (PNG)</button>
+</div></div>
+<div id=mg><canvas id=mgc width=300 height=300></canvas></div>
+
+<div id=rvModal>
+  <div id=rvPanels>
+    <div class=rvP><div class=lbl>LEFT</div><canvas id=rvCvL></canvas></div>
+    <div class=rvP><div class=lbl>CENTER</div><canvas id=rvCvC></canvas></div>
+    <div class=rvP><div class=lbl>RIGHT</div><canvas id=rvCvR></canvas></div>
+  </div>
+  <div id=rvBar>
+    <button class=p onclick=rvRecalc()>复核计算</button>
+    <button onclick=rvSwapLR()>交换左右</button>
+    <button onclick="document.getElementById('rvModal').classList.remove('show')">关闭</button>
+    <span id=rvResult></span>
+  </div>
+</div>
+
+<div id=setModal>
+  <div id=setPanel>
+    <button class=spClose onclick="document.getElementById('setModal').classList.remove('show')">&times;</button>
+    <h3>摄像头参数</h3>
+    <div id=setLoading><span class=ld></span>读取中...</div>
+    <div id=setContent></div>
+    <button class=p onclick=saveAllSettings()>保存设置</button>
+  </div>
+</div>
+
+
+<div id=custModal style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:270;overflow-y:auto;padding:20px">
+  <button onclick="document.getElementById('custModal').style.display='none'" style="position:fixed;top:10px;right:20px;background:none;border:none;color:#fff;font-size:24px;cursor:pointer;z-index:1">&times;</button>
+  <div id=custView style="max-width:900px;margin:0 auto;color:#ccc"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
