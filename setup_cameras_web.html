@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>摄像头位置设置</title>
+<style>
+  body { font-family: 'Microsoft YaHei',monospace; background: #111; color: #0f0; padding: 10px; }
+  h2 { color: #0ff; }
+  .grid { display: flex; gap: 10px; }
+  .cam-box { border: 3px solid #333; text-align: center; flex: 1; min-width: 250px; background: #1a1a2a; }
+  .cam-box.selected { border-color: #0f0; }
+  .cam-box video { width: 100%; max-height: 300px; display: block; }
+  .cam-box .label { font-size: 16px; padding: 4px; background: #222; }
+  button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; }
+  button.primary { background: #0a0; color: #fff; border: none; }
+  button.selected { background: #0f0; color: #000; }
+  .info { margin: 10px 0; font-size: 14px; }
+  #status { font-size: 16px; padding: 8px; border-radius: 4px; margin: 10px 0; }
+  #status.ready { background: #1a3a1a; }
+  #status.done { background: #0a3a0a; color: #0f0; }
+</style>
+</head>
+<body>
+<h2>摄像头位置设置</h2>
+<div class="info">点击每个画面下方的按钮指定摄像头位置。站在摄像头<b>后面</b>（同方向），左手边=左。</div>
+
+<div id="status" class="ready">正在初始化摄像头...</div>
+
+<div class="grid" id="grid"></div>
+
+<div class="info" style="margin-top:15px;">
+  <button class="primary" id="btnSave" disabled onclick="save()">保存配置</button>
+  <button onclick="location.reload()">重新检测</button>
+</div>
+
+<script>
+var streams = [null, null, null];
+var cams = [];
+var assigned = { left: null, center: null, right: null };
+
+async function init() {
+  var test = await navigator.mediaDevices.getUserMedia({ video: true });
+  test.getTracks().forEach(function(t) { t.stop(); });
+
+  var devices = await navigator.mediaDevices.enumerateDevices();
+  cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+  
+  if (cams.length < 3) {
+    document.getElementById('status').textContent = '检测到 ' + cams.length + ' 个摄像头，需要 3 个';
+    return;
+  }
+
+  var grid = document.getElementById('grid');
+  for (var i = 0; i < cams.length; i++) {
+    var box = document.createElement('div');
+    box.className = 'cam-box';
+    box.id = 'cam-' + i;
+    box.innerHTML = '<div class="label">摄像头 #' + i + ' - ' + (cams[i].label || '').substring(0, 20) + '</div>' +
+      '<video autoplay playsinline muted></video>' +
+      '<div style="padding:5px;">' +
+      '<button onclick="assignCam(' + i + ',\'left\')">设为 左</button> ' +
+      '<button onclick="assignCam(' + i + ',\'center\')">设为 中</button> ' +
+      '<button onclick="assignCam(' + i + ',\'right\')">设为 右</button>' +
+      '</div>';
+    grid.appendChild(box);
+  }
+
+  for (var i = 0; i < cams.length; i++) {
+    var stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: cams[i].deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    streams[i] = stream;
+    document.querySelector('#cam-' + i + ' video').srcObject = stream;
+  }
+  
+  document.getElementById('status').textContent = '请为每个摄像头指定左/中/右位置';
+}
+
+function assignCam(idx, pos) {
+  // Remove old assignment for this position
+  for (var oldIdx in assigned) {
+    if (assigned[oldIdx] === idx) assigned[oldIdx] = null;
+  }
+  assigned[pos] = idx;
+  updateUI();
+}
+
+function updateUI() {
+  var allSet = assigned.left !== null && assigned.center !== null && assigned.right !== null;
+  document.getElementById('btnSave').disabled = !allSet;
+  
+  for (var i = 0; i < cams.length; i++) {
+    var box = document.getElementById('cam-' + i);
+    box.classList.remove('selected');
+    for (var pos in assigned) {
+      if (assigned[pos] === i) {
+        box.classList.add('selected');
+        var label = pos === 'left' ? '左' : (pos === 'center' ? '中' : '右');
+        box.querySelector('.label').textContent = '摄像头 #' + i + ' -> ' + label;
+      }
+    }
+  }
+  
+  if (allSet) {
+    document.getElementById('status').textContent = '三个位置已指定：左=#' + assigned.left + ' 中=#' + assigned.center + ' 右=#' + assigned.right + '。点击保存。';
+    document.getElementById('status').className = 'done';
+  }
+}
+
+async function save() {
+  try {
+    var resp = await fetch('/save_cam_config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(assigned)
+    });
+    if (resp.ok) {
+      document.getElementById('status').textContent = '配置已保存！';
+      document.getElementById('status').className = 'done';
+    }
+  } catch(e) {
+    document.getElementById('status').textContent = '保存失败: ' + e.message;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
