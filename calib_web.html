@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>三摄标定采集</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; padding: 10px; margin: 0; }
+  h2 { color: #0ff; margin: 5px 0; }
+  .grid { display: flex; gap: 8px; flex-wrap: wrap; }
+  .cam-box { border: 3px solid #333; background: #1a1a2a; text-align: center; flex: 1; min-width: 280px; }
+  .cam-box.ok { border-color: #0f0; }
+  .cam-box.fail { border-color: #f44; }
+  .cam-box video { width: 100%; max-height: 300px; display: block; }
+  .cam-box .label { font-size: 16px; padding: 4px; }
+  .info { margin: 8px 0; font-size: 14px; }
+  .info .val { color: #ff0; font-size: 18px; }
+  button { padding: 8px 16px; font-size: 14px; margin: 4px; cursor: pointer; }
+  #status { font-size: 16px; padding: 8px; margin: 8px 0; border-radius: 4px; }
+  #status.ready { background: #1a3a1a; color: #0f0; }
+  #status.capturing { background: #3a3a1a; color: #ff0; }
+  input[type=range] { width: 200px; margin: 0 10px; }
+</style>
+</head>
+<body>
+<h2>三摄标定采集</h2>
+
+<div class="info">
+  <button onclick="initCams()">🔍 初始化摄像头</button>
+  <button onclick="capture()" id="btnCap" disabled>📸 拍照 (或按空格)</button>
+  <span style="margin-left:20px">已拍: <span class="val" id="count">0</span> 组</span>
+  <span style="margin-left:20px">棋盘格: 9×6 内角点, 19.6mm/格</span>
+</div>
+
+<div class="info">
+  <label>左:</label>
+  <select id="selLeft"></select>
+  <label style="margin-left:20px">中:</label>
+  <select id="selCenter"></select>
+  <label style="margin-left:20px">右:</label>
+  <select id="selRight"></select>
+</div>
+
+<div id="status">请先初始化摄像头</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+var streams = [null, null, null];
+var cams = [];
+var count = 0;
+
+async function initCams() {
+  document.getElementById('status').textContent = '检测摄像头...';
+  document.getElementById('status').className = 'capturing';
+  
+  // 请求权限
+  var testStream = await navigator.mediaDevices.getUserMedia({ video: true });
+  testStream.getTracks().forEach(function(t) { t.stop(); });
+
+  var devices = await navigator.mediaDevices.enumerateDevices();
+  cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+  
+  if (cams.length < 3) {
+    document.getElementById('status').textContent = '错误: 只检测到 ' + cams.length + ' 个摄像头，需要3个';
+    document.getElementById('status').className = 'fail';
+    return;
+  }
+
+  // 填充下拉框
+  ['selLeft', 'selCenter', 'selRight'].forEach(function(selId, i) {
+    var sel = document.getElementById(selId);
+    sel.innerHTML = '';
+    for (var j = 0; j < cams.length; j++) {
+      sel.innerHTML += '<option value="' + j + '" ' + (j === i ? 'selected' : '') + '>摄像头#' + j + ' ' + (cams[j].label || '').substring(0, 20) + '</option>';
+    }
+  });
+
+  openPreviews();
+}
+
+async function openPreviews() {
+  // 关闭旧流
+  streams.forEach(function(s) { if (s) { s.getTracks().forEach(function(t) { t.stop(); }); } });
+  streams = [null, null, null];
+  document.getElementById('grid').innerHTML = '';
+
+  ['left', 'center', 'right'].forEach(function(pos, i) {
+    var box = document.createElement('div');
+    box.className = 'cam-box';
+    box.id = 'box-' + pos;
+    box.innerHTML = '<div class="label">' + pos.toUpperCase() + '</div><video autoplay playsinline muted></video>';
+    document.getElementById('grid').appendChild(box);
+  });
+
+  // 用 1080P 预览
+  for (var i = 0; i < 3; i++) {
+    var selId = ['selLeft', 'selCenter', 'selRight'][i];
+    var camIdx = parseInt(document.getElementById(selId).value);
+    var pos = ['left', 'center', 'right'][i];
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: cams[camIdx].deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      });
+      streams[i] = stream;
+      var video = document.querySelector('#box-' + pos + ' video');
+      video.srcObject = stream;
+      document.querySelector('#box-' + pos).className = 'cam-box ok';
+    } catch(e) {
+      document.querySelector('#box-' + pos).className = 'cam-box fail';
+    }
+  }
+
+  document.getElementById('btnCap').disabled = false;
+  document.getElementById('status').textContent = '就绪 - 棋盘格摆好，按空格或点拍照';
+  document.getElementById('status').className = 'ready';
+}
+
+async function capture() {
+  document.getElementById('status').textContent = '抓取中...';
+  document.getElementById('status').className = 'capturing';
+  
+  // 关闭预览流，释放带宽给4K抓帧
+  streams.forEach(function(s) { if (s) { s.getTracks().forEach(function(t) { t.stop(); }); } });
+  streams = [null, null, null];
+  await new Promise(function(r) { setTimeout(r, 500); }); // 等流完全释放
+  
+  var data = [];
+  
+  for (var i = 0; i < 3; i++) {
+    var pos = ['left', 'center', 'right'][i];
+    var selId = ['selLeft', 'selCenter', 'selRight'][i];
+    var camIdx = parseInt(document.getElementById(selId).value);
+    var box = document.querySelector('#box-' + pos);
+    
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: cams[camIdx].deviceId }, width: 1920, height: 1080 }
+      });
+      var video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.playsInline = true;
+      
+      await new Promise(function(resolve) {
+        video.onloadedmetadata = function() {
+          video.play();
+          setTimeout(resolve, 1500);
+        };
+      });
+
+      var canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      var imgData = canvas.toDataURL('image/jpeg', 0.95).split(',')[1];
+      
+      console.log(pos + ': ' + video.videoWidth + 'x' + video.videoHeight);
+      
+      stream.getTracks().forEach(function(t) { t.stop(); });
+      
+      data.push({ pos: pos, image: imgData, count: count });
+      box.className = 'cam-box ok';
+    } catch(e) {
+      console.log(pos + ' error: ' + e.message);
+      data.push({ pos: pos, image: '', count: count, cb_found: false });
+      box.className = 'cam-box fail';
+    }
+  }
+
+  // 发送到服务器检测棋盘格
+  try {
+    var resp = await fetch('/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    var result = await resp.json();
+    
+    result.saved.forEach(function(s) {
+      var box = document.querySelector('#box-' + s.pos);
+      box.className = 'cam-box ' + (s.cb ? 'ok' : 'fail');
+    });
+
+    if (result.all_cb) {
+      count++;
+      document.getElementById('count').textContent = count;
+      document.getElementById('status').textContent = '✓ 第 ' + count + ' 组已保存! 移动棋盘格继续...';
+      document.getElementById('status').className = 'ready';
+    } else {
+      document.getElementById('status').textContent = '! 有摄像头未检测到棋盘格，请调整位置重拍';
+      document.getElementById('status').className = 'capturing';
+    }
+  } catch(e) {
+    document.getElementById('status').textContent = '错误: 服务器未响应，请检查 calib_server.py 是否在运行';
+    document.getElementById('status').className = 'fail';
+  }
+
+  // 恢复预览流
+  openPreviews();
+}
+
+// 空格键拍照
+document.addEventListener('keydown', function(e) {
+  if (e.code === 'Space' && !document.getElementById('btnCap').disabled) {
+    e.preventDefault();
+    capture();
+  }
+});
+
+// 切换摄像头时重新预览
+['selLeft', 'selCenter', 'selRight'].forEach(function(id) {
+  document.getElementById(id).addEventListener('change', openPreviews);
+});
+</script>
+</body>
+</html>
