@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>三摄同步测试</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; padding: 20px; }
+  h2 { color: #0ff; }
+  .info { color: #ff0; }
+  .warn { color: #f80; }
+  .err { color: #f44; }
+  button { margin: 4px 0; cursor: pointer; padding: 6px 12px; }
+  .grid { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .cam-box { border: 2px solid #333; background: #1a1a2a; padding: 8px; text-align: center; min-width: 300px; }
+  .cam-box.active { border-color: #0f0; }
+  .cam-box video { width: 100%; max-width: 320px; display: block; }
+  .cam-box .label { font-size: 14px; margin: 4px 0; }
+  .cam-box .res { font-size: 11px; color: #888; }
+</style>
+</head>
+<body>
+<h2>三摄同步测试</h2>
+<button onclick="testAllCams()">🔍 检测所有摄像头</button>
+<button onclick="openAllCams()">📷 同时打开三个</button>
+<button onclick="takeSnapshot()">📸 拍一张快照（验证同步）</button>
+<div class="grid" id="grid"></div>
+<div id="output"></div>
+
+<script>
+var activeStreams = [];
+
+function log(msg, cls) { document.getElementById('output').innerHTML += '<pre class="'+(cls||'')+'">'+msg+'</pre>'; }
+
+async function testAllCams() {
+  document.getElementById('output').innerHTML = '';
+  log('正在枚举设备...', 'info');
+  
+  var devices = await navigator.mediaDevices.enumerateDevices();
+  var cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+  
+  log('找到 ' + cams.length + ' 个视频设备', 'info');
+  
+  for (var i = 0; i < cams.length; i++) {
+    log('设备 #' + i + ': ' + (cams[i].label || '(无标签)') + ' | groupId:' + (cams[i].groupId || '?').substring(0,20), '');
+    
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { ideal: cams[i].deviceId }, width: 3840, height: 2160 }
+      });
+      var s = stream.getVideoTracks()[0].getSettings();
+      log('  ✓ 可打开: ' + s.width + '×' + s.height + ' @' + (s.frameRate||'?') + 'fps', 'info');
+      stream.getTracks().forEach(function(t) { t.stop(); });
+    } catch(e) {
+      log('  ✗ 打开失败: ' + e.name, 'err');
+    }
+  }
+  
+  if (cams.length < 3) {
+    log('⚠ 只检测到 ' + cams.length + ' 个摄像头，需要 3 个。请检查 USB 连接。', 'warn');
+  } else {
+    log('✅ 检测到 3 个摄像头！可以同时打开测试', 'info');
+  }
+}
+
+async function openAllCams() {
+  // 先关闭所有已打开的流
+  activeStreams.forEach(function(s) { s.getTracks().forEach(function(t) { t.stop(); }); });
+  activeStreams = [];
+  document.getElementById('grid').innerHTML = '';
+  document.getElementById('output').innerHTML = '';
+
+  var devices = await navigator.mediaDevices.enumerateDevices();
+  var cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+  
+  if (cams.length < 3) {
+    log('错误: 只检测到 ' + cams.length + ' 个摄像头，需要 3 个。', 'err');
+    return;
+  }
+
+  log('正在同时打开 3 个摄像头...', '');
+
+  for (var i = 0; i < 3; i++) {
+    try {
+      var stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { ideal: cams[i].deviceId }, width: 1920, height: 1080 }
+      });
+      activeStreams.push(stream);
+      var s = stream.getVideoTracks()[0].getSettings();
+      
+      var box = document.createElement('div');
+      box.className = 'cam-box active';
+      box.id = 'cam-box-'+i;
+      box.innerHTML = '<div class="label">📷 #' + i + '</div>' +
+        '<video autoplay playsinline muted></video>' +
+        '<div class="res">' + s.width + '×' + s.height + ' @' + (s.frameRate||'?') + 'fps</div>';
+      
+      document.getElementById('grid').appendChild(box);
+      box.querySelector('video').srcObject = stream;
+      
+      log('  ✓ #' + i + ' 已打开: ' + s.width + '×' + s.height + ' @' + (s.frameRate||'?') + 'fps', 'info');
+    } catch(e) {
+      log('  ✗ #' + i + ' 失败: ' + e.name + ' (' + e.message + ')', 'err');
+    }
+  }
+  
+  if (activeStreams.length === 3) {
+    log('✅ 三个摄像头同时工作！', 'info');
+  } else {
+    log('⚠ 只有 ' + activeStreams.length + ' 个成功，可能有带宽或设备冲突。', 'warn');
+  }
+}
+
+function takeSnapshot() {
+  var boxes = document.querySelectorAll('.cam-box');
+  var now = new Date().getTime();
+  boxes.forEach(function(box, i) {
+    var video = box.querySelector('video');
+    if (!video || !video.srcObject) return;
+    var canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    var url = canvas.toDataURL('image/jpeg', 0.9);
+    var a = document.createElement('a');
+    a.download = 'cam_' + i + '_' + now + '.jpg';
+    a.href = url;
+    a.click();
+  });
+  log('📸 已快照 3 张，时间戳: ' + now, 'info');
+}
+</script>
+</body>
+</html>
