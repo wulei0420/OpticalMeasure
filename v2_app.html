@@ -1,0 +1,729 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><title>OpticalMeasure V2.0</title>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:monospace;background:#0f0f1a;color:#c8c8d8;font-size:12px;overflow:hidden;display:flex;flex-direction:column;height:100vh}
+.bar{display:flex;gap:6px;align-items:center;padding:4px 8px;background:#181825;border-bottom:1px solid #2a2a40;flex-shrink:0}
+button{padding:4px 12px;cursor:pointer;font-size:12px;border:1px solid #4a90d9;background:transparent;color:#4a90d9;border-radius:3px}
+button:hover{background:#4a90d9;color:#fff}
+button.p{background:#4a90d9;color:#fff}
+#main{flex:1;display:flex;overflow:hidden;position:relative}
+#cc{flex:1;position:relative;background:#1a1a2e;overflow:hidden}
+canvas{position:absolute;top:0;left:0;display:block}
+#hint{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);color:#fff;padding:6px 16px;border-radius:5px;font-size:13px;pointer-events:none;opacity:0;transition:opacity .3s;white-space:nowrap;z-index:5}
+#capOverlay{display:none;position:absolute;top:0;left:0;right:288px;bottom:0;background:rgba(0,0,0,.6);z-index:10;justify-content:center;align-items:center;flex-direction:column}
+#capOverlay.active{display:flex}
+#capOverlay span{color:#ff0;font-size:24px;font-weight:bold;margin-bottom:10px}
+#capDots{display:flex;gap:6px}
+#capDots span{width:8px;height:8px;border-radius:50%;background:#ff0;animation:capBounce 1.2s infinite}
+#capDots span:nth-child(2){animation-delay:.2s}
+#capDots span:nth-child(3){animation-delay:.4s}
+@keyframes capBounce{0%,80%,100%{transform:scale(.6);opacity:.4}40%{transform:scale(1);opacity:1}}
+#panel{width:280px;flex-shrink:0;overflow-y:auto;background:#181825;border-left:1px solid #2a2a40;padding:8px;display:flex;flex-direction:column;gap:6px}
+.sec{background:#1e1e30;border-radius:4px;padding:6px 8px;border:1px solid #2a2a40}
+.sec h4{color:#4a90d9;font-size:12px;margin-bottom:4px}
+.row{display:flex;justify-content:space-between;padding:2px 0;font-size:11px}
+.row .l{color:#707088}.row .v{color:#e8e8f8;font-weight:500}
+#mg{display:none;position:fixed;width:150px;height:150px;border-radius:50%;overflow:hidden;border:2px solid rgba(255,255,255,.8);box-shadow:0 4px 20px rgba(0,0,0,.5);pointer-events:none;z-index:100}
+#mgc{width:100%;height:100%;display:block}
+#sta{font-size:11px;color:#707088;padding:2px 8px;background:#181825;border-top:1px solid #2a2a40;flex-shrink:0;display:flex;gap:16px}
+#st{color:#ff0;font-size:12px}
+#modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;justify-content:center;align-items:flex-start;overflow-y:auto;padding:40px 20px}
+#modal.show{display:flex}
+#rpt{background:#fff;color:#222;width:700px;max-width:100%;border-radius:8px;padding:30px 28px;font-size:13px;position:relative;box-shadow:0 8px 40px rgba(0,0,0,.4)}
+#rpt h2{text-align:center;margin-bottom:4px;font-size:20px;color:#111}
+#rsub{text-align:center;color:#666;font-size:11px;margin-bottom:16px}
+.report-sep{border:none;border-top:1px dashed #ddd;margin:14px 0}
+#rimg{text-align:center;margin-bottom:12px}
+#rimg canvas{display:block;margin:0 auto;max-width:100%;border:1px solid #ddd;border-radius:4px;position:static}
+.report-table{width:100%;border-collapse:collapse;margin:8px 0;font-size:13px}
+.report-table th,.report-table td{border:1px solid #ddd;padding:6px 10px;text-align:center}
+.report-table th{background:#f5f5f5;font-weight:600}
+.report-suggestions{background:#f9f9f9;padding:10px 14px;border-radius:4px;margin:8px 0}
+.report-suggestions li{margin:4px 0;font-size:12px}
+.report-footer{font-size:11px;color:#888;margin-top:10px}
+.report-note{font-size:11px;color:#e74c3c;margin-top:6px}
+#rclose{position:absolute;top:12px;right:16px;background:none;border:none;font-size:22px;cursor:pointer;color:#888;line-height:1}
+#rsave{display:block;margin:16px auto 0;padding:10px 32px;background:#4a90d9;color:#fff;border:none;border-radius:4px;font-size:14px;cursor:pointer;font-family:inherit}
+#rvModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:250;justify-content:center;align-items:center;flex-direction:column}
+#rvModal.show{display:flex}
+#rvPanels{display:flex;gap:4px;max-height:80vh}
+.rvP{flex:1;position:relative;border:2px solid #333;min-width:250px;max-width:33vw;height:65vh}
+.rvP canvas{display:block;width:100%;height:100%;cursor:grab}
+.rvP .lbl{position:absolute;top:2px;left:4px;color:#ff0;font-size:11px;pointer-events:none}
+#rvBar{padding:8px;display:flex;gap:8px;align-items:center;background:#0f0f1a}
+#rvBar button{padding:6px 16px;font-size:13px}
+#rvResult{color:#ff0;font-size:14px;padding:4px 0}
+#setModal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:260;justify-content:center;align-items:flex-start;padding-top:3vh}
+#setModal.show{display:flex}
+#setPanel{background:#181825;border:2px solid #4a90d9;border-radius:8px;padding:16px 20px;max-width:700px;width:90vw;max-height:90vh;overflow-y:auto;position:relative}
+.spClose{position:absolute;top:8px;right:12px;font-size:22px}
+#setPanel h3{color:#4a90d9;margin-bottom:12px}
+#setPanel .camBlock{border:1px solid #2a2a40;border-radius:4px;padding:8px 12px;margin-bottom:8px}
+#setPanel .camBlock h4{color:#f0ad4e;margin-bottom:6px;font-size:13px}
+#setPanel .row{display:flex;gap:8px;align-items:center;margin:4px 0}
+#setPanel .row .lbl{width:80px;color:#aaa;font-size:11px;text-align:right}
+#setPanel .row input[type=range]{flex:1;height:6px}
+#setPanel .row .val{width:36px;text-align:center;color:#fff;font-size:11px}
+#setPanel .row .btn{width:48px;text-align:center;font-size:10px}
+#setModal .ld{display:inline-block;width:12px;height:12px;border:2px solid #4a90d9;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;margin-right:6px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class=bar>
+  <button onclick=prepare() style="border-color:#f0ad4e;color:#f0ad4e">Prepare</button>
+  <button class=p onclick=capture() id=btnCap disabled>Capture</button>
+  <button onclick=reset()>Reset</button>
+  <button onclick=compute() style="background:#f0ad4e;color:#000;border-color:#f0ad4e">Compute</button>
+  <button onclick=review() style="border-color:#f0ad4e;color:#f0ad4e" id=btnReview disabled>复核</button>
+  <button onclick=report() style="border-color:#f0ad4e;color:#f0ad4e">Report</button>
+  <button onclick=toggleSettings() style="border-color:#888;color:#888">设置</button>
+  <span id=st>Ready</span>
+</div>
+<div id=main>
+  <div id=cc>
+    <canvas id=cv></canvas>
+    <div id=hint>Step 1/4: Click RIGHT pupil</div>
+  </div>
+  <div id=capOverlay><span>拍照中</span><div id=capDots><span></span><span></span><span></span></div></div>
+  <div id=panel>
+    <div class=sec><h4>Results</h4>
+      <div class=row><span class=l>PD</span><span class=v id=vp>--</span></div>
+      <div class=row><span class=l>RPD</span><span class=v id=vr>--</span></div>
+      <div class=row><span class=l>LPD</span><span class=v id=vl>--</span></div>
+      <div class=row><span class=l>Right PH</span><span class=v id=vpr>--</span></div>
+      <div class=row><span class=l>Left PH</span><span class=v id=vpl>--</span></div>
+    </div>
+  </div>
+</div>
+<div id=sta><span>Scale:<span id=ss>100%</span></span><span>Pos:<span id=sp>(0,0)</span></span><span>Size:<span id=sz>--</span></span><span>Step:<span id=sm>0/4</span></span></div>
+<div id=modal><div id=rpt>
+  <button id=rclose onclick="document.getElementById('modal').classList.remove('show')">&times;</button>
+  <h2>旧时候眼镜店 戴镜测量AI分析报告</h2>
+  <div id=rsub>OpticalMeasure V2.0</div>
+  <hr class=report-sep>
+  <div id=rimg></div>
+  <hr class=report-sep>
+  <h3 style="font-size:15px;margin-bottom:6px">&#x1F4CA; 测量数据</h3>
+  <table class=report-table id=rtable></table>
+  <h3 style="font-size:15px;margin:10px 0 6px">&#x1F4DD; 配镜建议</h3>
+  <ul class=report-suggestions id=rsug></ul>
+  <hr class=report-sep>
+  <div class=report-footer>
+    <div>测量编号：<span id=rid>--</span></div>
+    <div>测量日期：<span id=rdt>--</span></div>
+    <div>测量工具：OpticalMeasure V2.0</div>
+    <div>操作人员：________</div>
+  </div>
+  <div class=report-note>&#x26A0; 本测量基于照片分析，建议结合专业设备复核确认。</div>
+  <button id=rsave onclick=saveReport()>&#x1F4BE; 保存报告图片 (PNG)</button>
+</div></div>
+<div id=mg><canvas id=mgc width=300 height=300></canvas></div>
+
+<div id=rvModal>
+  <div id=rvPanels>
+    <div class=rvP><div class=lbl>LEFT</div><canvas id=rvCvL></canvas></div>
+    <div class=rvP><div class=lbl>CENTER</div><canvas id=rvCvC></canvas></div>
+    <div class=rvP><div class=lbl>RIGHT</div><canvas id=rvCvR></canvas></div>
+  </div>
+  <div id=rvBar>
+    <button class=p onclick=rvRecalc()>复核计算</button>
+    <button onclick=rvSwapLR()>交换左右</button>
+    <button onclick="document.getElementById('rvModal').classList.remove('show')">关闭</button>
+    <span id=rvResult></span>
+  </div>
+</div>
+
+<div id=setModal>
+  <div id=setPanel>
+    <button class=spClose onclick="document.getElementById('setModal').classList.remove('show')">&times;</button>
+    <h3>摄像头参数</h3>
+    <div id=setLoading><span class=ld></span>读取中...</div>
+    <div id=setContent></div>
+    <button class=p onclick=saveAllSettings()>保存设置</button>
+  </div>
+</div>
+
+<script>
+// ====== State ======
+var W=0,H=0,img=new Image(),pts=[],step=0;
+var scale=1,ox=0,oy=0,panning=0,panSX=0,panSY=0,panOX=0,panOY=0,space=0;
+var drag=0,ds=null,de=null,deye=null;
+var hdrag=0,hdragPt=null,hdragId=null;
+var dragPtId=null;
+var mouseX=0,mouseY=0,mouseOnCanvas=0;
+var showHint=0,mgTimer=null,showMg=0,mgX=0,mgY=0;
+var dpr=window.devicePixelRatio||1;
+
+var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+var cc=document.getElementById('cc'),hint=document.getElementById('hint');
+var mgDiv=document.getElementById('mg'),mgCvs=document.getElementById('mgc'),mgCtx=mgCvs.getContext('2d');
+
+// ====== Coordinate transforms ======
+function s2p(sx,sy){return{x:sx/scale+ox,y:sy/scale+oy}}
+function p2s(px,py){return{x:(px-ox)*scale,y:(py-oy)*scale}}
+function canvasRect(){return cv.getBoundingClientRect()}
+
+// ====== API calls ======
+async function apiMatch(cx,cy){try{var d=await(await fetch('/api/match',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cx:cx,cy:cy})})).json();return{lx:d.left?d.left.x:cx,ly:d.left?d.left.y:cy,rx:d.right?d.right.x:cx,ry:d.right?d.right.y:cy,p3d:d['3d']}}catch(e){return{lx:cx,ly:cy,rx:cx,ry:cy,p3d:[0,0,0]}}}
+function getPt(id){for(var i=0;i<pts.length;i++){if(pts[i].id===id)return pts[i]}return null}
+
+var prepared=0,previewStream=null,camDevices=[];
+var canvasOut=null; // preview video element hidden
+
+async function prepare(){
+  document.getElementById('st').textContent='Requesting...';
+  document.getElementById('btnCap').disabled=true;document.getElementById('btnReview').disabled=true;
+  try{
+    var ts=await navigator.mediaDevices.getUserMedia({video:true});ts.getTracks().forEach(function(t){t.stop()});
+    camDevices=(await navigator.mediaDevices.enumerateDevices()).filter(function(d){return d.kind==='videoinput'});
+    if(camDevices.length<1){alert('No camera');return}
+    // Read camera config to find center camera's browser index
+    var centerBr = 1; // default
+    try{
+      var cfgResp=await fetch('/api/get_cams');
+      var cfg=await cfgResp.json();
+      if(cfg&&cfg.center!==undefined){
+        centerBr = cfg.center; // direct mapping: browser = DSHOW
+      }
+    }catch(e){}
+    previewStream=await navigator.mediaDevices.getUserMedia({
+      video:{deviceId:{exact:camDevices[centerBr].deviceId},width:1920,height:1080}
+    });
+    // Show preview video directly in canvas container
+    var pv=document.createElement('video');
+    pv.id='previewVid';pv.autoplay=true;pv.playsInline=true;pv.muted=true;
+    pv.srcObject=previewStream;
+    pv.style.cssText='width:100%;height:100%;object-fit:contain;background:#000';
+    var ccDiv=document.getElementById('cc');
+    ccDiv.innerHTML='';ccDiv.appendChild(pv);
+    prepared=1;document.getElementById('btnCap').disabled=false;
+    document.getElementById('st').textContent='Ready. Capture when positioned.';
+  }catch(e){document.getElementById('st').textContent='Error: '+e.message}
+}
+
+async function capture(){
+  if(!prepared){alert('Click Prepare first');return}
+  document.getElementById('st').textContent='Capturing...';
+  var pv=document.getElementById('previewVid');
+  if(pv){
+    var cw2=cc.clientWidth,ch2=cc.clientHeight;
+    cv.width=cw2;cv.height=ch2;
+    cv.getContext('2d').drawImage(pv,0,0,cw2,ch2);
+    cc.innerHTML='';cc.appendChild(cv);
+  }
+  if(previewStream){previewStream.getTracks().forEach(function(t){t.stop()});previewStream=null}
+  canvasOut=null;prepared=0;
+  await new Promise(function(r){setTimeout(r,300)});
+  try{
+    var resp=await fetch('/api/capture',{method:'POST'});
+    var d=await resp.json();
+    if(d.error){alert(d.error);return}
+    W=d.w;H=d.h;pts=[];step=0;
+    var ccDiv=document.getElementById('cc');ccDiv.innerHTML='';ccDiv.appendChild(cv);
+    img=new Image();
+    img.onload=function(){
+      fitImage();draw();
+      document.getElementById('st').textContent='Step 1/4: Click RIGHT pupil';showHintMsg('Step 1/4: Click RIGHT pupil')
+    };
+    img.src='/api/image/center?t='+Date.now()
+  }catch(e){alert('Capture failed: '+e.message)}
+  document.getElementById('btnCap').disabled=true
+}
+
+function reset(){
+  pts=[];step=0;drag=0;hdrag=0;ds=de=null;deye=null;dragPtId=null;
+  if(previewStream){previewStream.getTracks().forEach(function(t){t.stop()});previewStream=null}
+  prepared=0;document.getElementById('btnCap').disabled=true;
+  // Restore canvas
+  var ccDiv=document.getElementById('cc');ccDiv.innerHTML='';ccDiv.appendChild(cv);
+  draw();updateResults();document.getElementById('st').textContent='Reset';hideHint()
+}
+function fitImage(){
+  var r=cc.getBoundingClientRect();var cw=r.width,ch=r.height;scale=cw*.85/W;scale=Math.max(.1,Math.min(5,scale));ox=(W-cw/scale)/2;oy=(H-ch/scale)/2
+}
+function showHintMsg(msg){hint.textContent=msg;hint.style.opacity='1';showHint=1}
+function hideHint(){hint.style.opacity='0';showHint=0}
+
+// ====== Magnifier ======
+function showMagnifier(px,py){
+  var s=p2s(px,py),rect=canvasRect();
+  mgX=s.x+rect.left;mgY=s.y+rect.top;
+  var sz=150;var l=mgX-sz-20,t=mgY-sz-20;
+  if(l<0)l=mgX+20;if(t<0)t=mgY+20;if(l+sz>window.innerWidth)l=mgX-sz-20;if(t+sz>window.innerHeight)t=mgY-sz-20;
+  mgDiv.style.left=Math.max(0,l)+'px';mgDiv.style.top=Math.max(0,t)+'px';mgDiv.style.display='block';
+  mgCtx.clearRect(0,0,300,300);mgCtx.save();mgCtx.beginPath();mgCtx.arc(150,150,150,0,6.283);mgCtx.clip();
+  var mz=4,ss=300/mz;mgCtx.drawImage(img,px-ss/2,py-ss/2,ss,ss,0,0,300,300);
+  mgCtx.strokeStyle='rgba(255,0,0,.5)';mgCtx.lineWidth=1;mgCtx.setLineDash([4,4]);
+  mgCtx.beginPath();mgCtx.moveTo(150,0);mgCtx.lineTo(150,300);mgCtx.moveTo(0,150);mgCtx.lineTo(300,150);mgCtx.stroke();mgCtx.setLineDash([]);
+  mgCtx.restore();showMg=1
+}
+function hideMagnifier(){mgDiv.style.display='none';showMg=0}
+function findNearby(px,py){var thr=30/scale,best=null,bestD=thr;for(var i=0;i<pts.length;i++){var p=pts[i];var dx=p.cx-px,dy=p.cy-py;var d=Math.sqrt(dx*dx+dy*dy);if(d<bestD){bestD=d;best=p}}return best}
+
+// ====== Drawing ======
+function draw(){
+  var r=cc.getBoundingClientRect();cv.width=r.width*dpr;cv.height=r.height*dpr;cv.style.width=r.width+'px';cv.style.height=r.height+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,r.height);
+  ctx.save();ctx.setTransform(scale*dpr,0,0,scale*dpr,-ox*scale*dpr,-oy*scale*dpr);
+  ctx.drawImage(img,0,0,W,H);
+  // Frame center line
+  var ri=getPt('right_frame_inner'),li=getPt('left_frame_inner');
+  if(ri&&li&&ri.placed!==!1&&li.placed!==!1){ctx.strokeStyle='rgba(255,255,255,.4)';ctx.lineWidth=1;ctx.setLineDash([6,4]);ctx.beginPath();var fcx=(ri.cx+li.cx)/2;ctx.moveTo(fcx,0);ctx.lineTo(fcx,H);ctx.stroke();ctx.setLineDash([])}
+  // Eye level line
+  var rp=getPt('right_pupil'),lp=getPt('left_pupil');
+  if(rp&&lp&&rp.placed!==!1&&lp.placed!==!1){ctx.strokeStyle='#27AE60';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(rp.cx,rp.cy);ctx.lineTo(lp.cx,lp.cy);ctx.stroke()}
+  // Frame boxes
+  for(var ei=0;ei<2;ei++){var eye=ei===0?'right':'left',t=getPt(eye+'_frame_top'),b=getPt(eye+'_frame_bottom'),inn=getPt(eye+'_frame_inner'),out=getPt(eye+'_frame_outer');
+    if(t&&b&&inn&&out){
+      var lx=Math.min(inn.cx,out.cx),rx=Math.max(inn.cx,out.cx),ty=t.cy,by=b.cy;
+      ctx.fillStyle='rgba(74,144,217,.08)';ctx.fillRect(lx,ty,rx-lx,by-ty);ctx.strokeStyle='#4A90D9';ctx.lineWidth=1.5;ctx.strokeRect(lx,ty,rx-lx,by-ty);
+      // Handles
+      var hs=8/scale;ctx.fillStyle='#fff';ctx.strokeStyle='#4A90D9';ctx.lineWidth=1.5;ctx.setLineDash([]);
+      var midX=(inn.cx+out.cx)/2,midY=(t.cy+b.cy)/2;
+      var hx=[midX,midX,inn.cx,out.cx],hy=[t.cy,b.cy,midY,midY];
+      for(var hi=0;hi<4;hi++){ctx.fillRect(hx[hi]-hs/2,hy[hi]-hs/2,hs,hs);ctx.strokeRect(hx[hi]-hs/2,hy[hi]-hs/2,hs,hs)}
+      // Edge guide lines
+      ctx.strokeStyle='rgba(149,165,166,.5)';ctx.lineWidth=1;ctx.setLineDash([4,6]);
+      ctx.beginPath();ctx.moveTo(lx,ty);ctx.lineTo(lx,0);ctx.stroke();ctx.beginPath();ctx.moveTo(lx,ty);ctx.lineTo(0,ty);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rx,ty);ctx.lineTo(rx,0);ctx.stroke();ctx.beginPath();ctx.moveTo(rx,ty);ctx.lineTo(W,ty);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(lx,by);ctx.lineTo(lx,H);ctx.stroke();ctx.beginPath();ctx.moveTo(lx,by);ctx.lineTo(0,by);ctx.stroke();
+      ctx.beginPath();ctx.moveTo(rx,by);ctx.lineTo(rx,H);ctx.stroke();ctx.beginPath();ctx.moveTo(rx,by);ctx.lineTo(W,by);ctx.stroke();
+      ctx.setLineDash([])
+    }
+  }
+  // Pupil icons
+  for(var i=0;i<pts.length;i++){var p=pts[i];if(p.id.indexOf('pupil')>=0){var or=22,ir=7;ctx.strokeStyle='rgba(255,255,255,.7)';ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(p.cx,p.cy,or,0,6.283);ctx.stroke();ctx.strokeStyle='rgba(241,196,15,.8)';ctx.lineWidth=1;ctx.beginPath();ctx.arc(p.cx,p.cy,ir,0,6.283);ctx.stroke();ctx.strokeStyle='#E74C3C';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(p.cx-or-5,p.cy);ctx.lineTo(p.cx+or+5,p.cy);ctx.moveTo(p.cx,p.cy-or-5);ctx.lineTo(p.cx,p.cy+or+5);ctx.stroke();ctx.fillStyle='#E74C3C';ctx.beginPath();ctx.arc(p.cx,p.cy,3,0,6.283);ctx.fill()}}
+  // Drag preview
+  if(drag&&ds&&de){ctx.strokeStyle='#0f0';ctx.lineWidth=2;ctx.setLineDash([5,3]);ctx.strokeRect(Math.min(ds.x,de.x),Math.min(ds.y,de.y),Math.abs(de.x-ds.x),Math.abs(de.y-ds.y));ctx.setLineDash([])}
+  ctx.restore();
+  // Results overlay
+  if(rp&&lp&&rp.p3d&&lp.p3d){ctx.fillStyle='#0f0';ctx.font='bold 14px monospace';ctx.fillText('PD:'+Math.sqrt(Math.pow(lp.p3d[0]-rp.p3d[0],2)+Math.pow(lp.p3d[1]-rp.p3d[1],2)).toFixed(1)+'mm',r.width-170,22)}
+  updateStatusBar();updateResults()
+}
+
+// ====== Handle detection (in screen coords) ======
+function hitHandle(sx,sy){
+  for(var ei=0;ei<2;ei++){var eye=ei===0?'right':'left',t=getPt(eye+'_frame_top'),b=getPt(eye+'_frame_bottom'),inn=getPt(eye+'_frame_inner'),out=getPt(eye+'_frame_outer');
+    if(!t||!b||!inn||!out)continue;
+    var midX=(inn.cx+out.cx)/2,midY=(t.cy+b.cy)/2;
+    var hs=12;
+    var hd=[
+      {id:eye+'_frame_top',    x:p2s(midX,0).x,    y:p2s(0,t.cy).y},
+      {id:eye+'_frame_bottom', x:p2s(midX,0).x,    y:p2s(0,b.cy).y},
+      {id:eye+'_frame_inner',  x:p2s(inn.cx,0).x,  y:p2s(0,midY).y},
+      {id:eye+'_frame_outer',  x:p2s(out.cx,0).x,  y:p2s(0,midY).y}
+    ];
+    for(var hi=0;hi<4;hi++){var h=hd[hi];if(sx>h.x-hs/2&&sx<h.x+hs/2&&sy>h.y-hs/2&&sy<h.y+hs/2)return{id:h.id}}
+  }return null
+}
+
+// ====== Mouse events ======
+cv.addEventListener('mousedown',async function(e){
+  var rect=canvasRect(),sx=e.clientX-rect.left,sy=e.clientY-rect.top;
+  var photo=s2p(sx,sy);
+  if(e.button===1||(e.button===0&&space)){panning=1;panSX=e.clientX;panSY=e.clientY;panOX=ox;panOY=oy;cv.style.cursor='grabbing';return}
+  if(e.button!==0)return;
+  // Handle hit?
+  var h=hitHandle(sx,sy);if(h){hdrag=1;hdragId=h.id;hdragPt=s2p(sx,sy);return}
+  // Draggable placed point?
+  var near=findNearby(photo.x,photo.y);if(near){dragPtId=near.id;hideMagnifier();return}
+  // New annotation
+  if(step>=4)return;
+  if(step<2){var id=step===0?'right_pupil':'left_pupil';pts.push({id:id,cx:Math.round(photo.x),cy:Math.round(photo.y)});step++;draw();showHintMsg('Step '+(step+1)+'/4: '+(step===1?'Click LEFT pupil':(step===2?'Drag RIGHT frame':'Drag LEFT frame')));document.getElementById('st').textContent='Step '+step+'/4'}
+  else{drag=1;deye=step===2?'right':'left';ds={x:photo.x,y:photo.y};de={x:photo.x,y:photo.y}}
+});
+cv.addEventListener('mousemove',async function(e){
+  var rect=canvasRect(),sx=e.clientX-rect.left,sy=e.clientY-rect.top;mouseX=sx;mouseY=sy;
+  var photo=s2p(sx,sy);
+  if(panning){ox=panOX-(e.clientX-panSX)/scale;oy=panOY-(e.clientY-panSY)/scale;draw();return}
+  if(hdrag&&hdragId){handleMove(sx,sy);showMagnifier(photo.x,photo.y);return}
+  if(dragPtId){var pt=getPt(dragPtId);if(pt){pt.cx=Math.round(photo.x);pt.cy=Math.round(photo.y)};draw();showMagnifier(photo.x,photo.y);return}
+  if(drag){de={x:photo.x,y:photo.y};draw();return}
+  // Cursor + magnifier
+  var near=findNearby(photo.x,photo.y);cv.style.cursor=near?'grab':'crosshair';
+  if(near){if(!showMg&&!mgTimer){var px=photo.x,py=photo.y;mgTimer=setTimeout(function(){if(Math.abs(mouseX-sx)<3&&Math.abs(mouseY-sy)<3)showMagnifier(px,py);mgTimer=null},300)};if(showMg)showMagnifier(photo.x,photo.y)}
+  else{hideMagnifier();if(mgTimer){clearTimeout(mgTimer);mgTimer=null}}
+});
+window.addEventListener('mouseup',async function(e){
+  if(panning){panning=0;cv.style.cursor='crosshair';return}
+  if(hdrag){var hid=hdragId;hdrag=0;hdragId=null;draw();return}
+  if(dragPtId){dragPtId=null;return}
+  if(!drag)return;drag=0;var eye=deye;deye=null;
+  // Use actual mouse event position (e.clientX, e.clientY) for final rect, not de
+  var rect2=canvasRect();
+  var endPos=s2p(e.clientX-rect2.left,e.clientY-rect2.top);
+  var lx=Math.min(ds.x,endPos.x),rx=Math.max(ds.x,endPos.x),ty=Math.min(ds.y,endPos.y),by=Math.max(ds.y,endPos.y);
+  var mx=(lx+rx)/2,my=(ty+by)/2,nx=eye==='right'?rx:lx,ox=eye==='right'?lx:rx;
+  document.getElementById('st').textContent='Matching frame...';
+  var corners=[[eye+'_frame_top',mx,ty],[eye+'_frame_bottom',mx,by],[eye+'_frame_inner',nx,my],[eye+'_frame_outer',ox,my]],batch=[];
+  for(var ci=0;ci<4;ci++){batch.push({id:corners[ci][0],cx:Math.round(corners[ci][1]),cy:Math.round(corners[ci][2])})}
+  pts=pts.concat(batch);step++;draw();document.getElementById('st').textContent=step>=4?'All done! Click Compute or drag handles.':'Step '+(step+1)+'/4';showHintMsg(step>=4?'Click Compute for results.':'Step '+(step+1)+'/4')
+});
+cv.addEventListener('wheel',function(e){e.preventDefault();var rect=canvasRect(),sx=e.clientX-rect.left,sy=e.clientY-rect.top;var ps=s2p(sx,sy),zs=scale;scale*=e.deltaY<0?1.09:1/1.09;scale=Math.max(.1,Math.min(5,scale));ox=ps.x-sx/scale;oy=ps.y-sy/scale;draw()},{passive:false});
+cv.addEventListener('contextmenu',function(e){e.preventDefault()});
+cv.addEventListener('mouseenter',function(){mouseOnCanvas=1;if(showHint)hint.style.opacity='1'});
+cv.addEventListener('mouseleave',function(){mouseOnCanvas=0;hideMagnifier();if(mgTimer){clearTimeout(mgTimer);mgTimer=null}panning=0;dragPtId=null;cv.style.cursor='default'});
+
+function handleMove(sx,sy){
+  var pt=getPt(hdragId);if(!pt)return;var eye=hdragId.split('_')[0],t=getPt(eye+'_frame_top'),b=getPt(eye+'_frame_bottom'),inn=getPt(eye+'_frame_inner'),out=getPt(eye+'_frame_outer');if(!t||!b||!inn||!out)return;
+  var ip=s2p(sx,sy),pos=hdragId.split('_').pop();
+  if(pos==='top'||pos==='bottom'){pt.cy=Math.round(ip.y);pt.cx=Math.round((inn.cx+out.cx)/2);if(pos==='top'&&pt.cy>b.cy-2)pt.cy=b.cy-2;if(pos==='bottom'&&pt.cy<t.cy+2)pt.cy=t.cy+2;t.cx=pt.cx;b.cx=pt.cx}
+  else{pt.cx=Math.round(ip.x);pt.cy=Math.round((t.cy+b.cy)/2);
+    if(pos==='inner'){if(eye==='right'&&pt.cx<out.cx+2)pt.cx=out.cx+2;if(eye==='left'&&pt.cx>out.cx-2)pt.cx=out.cx-2}
+    else{if(eye==='right'&&pt.cx>inn.cx-2)pt.cx=inn.cx-2;if(eye==='left'&&pt.cx<inn.cx+2)pt.cx=inn.cx+2}
+    inn.cy=pt.cy;out.cy=pt.cy}
+  draw()
+}
+
+// ====== Keyboard ======
+window.addEventListener('keydown',function(e){if(e.code==='Space'){e.preventDefault();space=1;cv.style.cursor='grab'}if(e.ctrlKey&&e.code==='KeyZ'){e.preventDefault();undo()}});
+window.addEventListener('keyup',function(e){if(e.code==='Space'){space=0;if(!panning)cv.style.cursor='crosshair'}});
+
+// ====== Results update ======
+function updateResults(){
+  var rp=getPt('right_pupil'),lp=getPt('left_pupil'),ri=getPt('right_frame_inner'),li=getPt('left_frame_inner');
+  if(rp&&lp&&rp.p3d&&lp.p3d){var dx=lp.p3d[0]-rp.p3d[0],dy=lp.p3d[1]-rp.p3d[1],pd=Math.sqrt(dx*dx+dy*dy);document.getElementById('vp').textContent=pd.toFixed(1)+' mm';
+    if(ri&&li&&ri.p3d&&li.p3d){var mx=(ri.p3d[0]+li.p3d[0])/2;document.getElementById('vr').textContent=(mx-rp.p3d[0]).toFixed(1)+' mm';document.getElementById('vl').textContent=(lp.p3d[0]-mx).toFixed(1)+' mm'}
+    for(var ei=0;ei<2;ei++){var eye=ei===0?'right':'left',pp=getPt(eye+'_pupil'),bb=getPt(eye+'_frame_bottom');if(pp&&bb&&pp.p3d&&bb.p3d){document.getElementById('vp'+(eye==='right'?'r':'l')).textContent=(bb.p3d[1]-pp.p3d[1]).toFixed(1)+' mm'}}
+  }
+}
+function updateStatusBar(){
+  document.getElementById('ss').textContent=Math.round(scale*100)+'%';document.getElementById('sp').textContent='('+Math.round(s2p(mouseX,mouseY).x)+','+Math.round(s2p(mouseX,mouseY).y)+')';
+  document.getElementById('sz').textContent=W+'x'+H;document.getElementById('sm').textContent=step+'/4'
+}
+var rvData=null;var rvZoom=[1,1,1];var rvPan=[0,0,0,0,0,0]; // 3 panels: zoom, panX, panY each
+var rvImgs=[new Image(),new Image(),new Image()];
+var rvDrag=null,rvDragSide=null;var rvPanning=0,rvPanStart=[0,0],rvPanOrig=[0,0];
+
+function review(){
+  if(pts.length===0){alert('No points to review');return}
+  rvData=JSON.parse(JSON.stringify(pts));rvDrag=null;rvDragSide=null;rvZoom=[1,1,1];rvPan=[0,0,0,0,0,0];rvFitDone=false;
+  var loaded=0;
+  function tryDraw(){loaded++;if(loaded>=3){drawRV()}setTimeout(drawRV,500)}
+  for(var si=0;si<3;si++){(function(idx){
+    rvImgs[idx]=new Image();rvImgs[idx].onload=tryDraw;rvImgs[idx].onerror=tryDraw;
+    rvImgs[idx].src='/api/image/'+(idx===0?'left':idx===1?'center':'right')+'?t='+Date.now()
+  })(si)}
+  document.getElementById('rvModal').classList.add('show')
+}
+
+function rvPtAt(side,cvx,cvy){
+  // cvx,cvy are canvas pixel coords. Convert to image coords using zoom/pan
+  var si=side==='left'?0:side==='center'?1:2;
+  var z=rvZoom[si],px=rvPan[si*2],py=rvPan[si*2+1];
+  var ix=(cvx-px)/z,iy=(cvy-py)/z;
+  if(ix<0||ix>=W||iy<0||iy>=H)return null;
+  var best=null,bestD=25/z;
+  for(var i=0;i<rvData.length;i++){
+    var p=rvData[i];var ppx=side==='left'?p.lx:side==='center'?p.cx:p.rx;
+    var ppy=side==='left'?p.ly:side==='center'?p.cy:p.ry;
+    if(typeof ppx==='undefined'||ppx===null)continue;
+    var d=Math.sqrt((ix-ppx)*(ix-ppx)+(iy-ppy)*(iy-ppy));
+    if(d<bestD){bestD=d;best=i}
+  }
+  return best
+}
+
+var rvFitDone=false;
+
+function drawRV(){
+  var cvs=[document.getElementById('rvCvL'),document.getElementById('rvCvC'),document.getElementById('rvCvR')];
+  var sides=['left','center','right'];
+  var dws=[250,250,250];var dhs=[250,250,250];
+  var panels=document.querySelectorAll('.rvP');
+  for(var pi=0;pi<3;pi++){
+    if(panels[pi]){dws[pi]=panels[pi].clientWidth;dhs[pi]=panels[pi].clientHeight}
+    // Auto-fit zoom on first draw
+    if(!rvFitDone&&dws[pi]>0&&dhs[pi]>0){
+      var fit=Math.min(dws[pi]/W,dhs[pi]/H);
+      rvZoom[pi]=fit;rvPan[pi*2]=(dws[pi]-W*fit)/2;rvPan[pi*2+1]=(dhs[pi]-H*fit)/2
+    }
+    cvs[pi].width=dws[pi];cvs[pi].height=dhs[pi];var ctx=cvs[pi].getContext('2d');ctx.clearRect(0,0,dws[pi],dhs[pi]);
+    var z=rvZoom[pi],px=rvPan[pi*2],py=rvPan[pi*2+1];
+    if(rvImgs[pi]&&rvImgs[pi].complete&&rvImgs[pi].naturalWidth>0){
+      ctx.save();ctx.translate(px,py);ctx.scale(z,z);ctx.drawImage(rvImgs[pi],0,0,W,H);ctx.restore()
+    }
+    // Draw points
+    ctx.save();ctx.translate(px,py);ctx.scale(z,z);
+    for(var i=0;i<rvData.length;i++){
+      var p=rvData[i];var ppx,pppy,id=p.id;
+      if(pi===0){ppx=p.lx;pppy=p.ly}else if(pi===1){ppx=p.cx;pppy=p.cy}else{ppx=p.rx;pppy=p.ry}
+      if(typeof ppx==='undefined'||ppx===null)continue;
+      var isP=id.indexOf('pupil')>=0,isSel=(rvDrag!==null&&rvDrag===i&&rvDragSide===sides[pi]);
+      ctx.strokeStyle=isSel?'#f00':isP?'#0f0':'#4af';ctx.lineWidth=isSel?3/z:isP?2/z:1.5/z;
+      ctx.beginPath();ctx.arc(ppx,pppy,isP?14:8,0,6.28);ctx.stroke();
+      if(isSel){ctx.fillStyle='#f00';ctx.beginPath();ctx.arc(ppx,pppy,3,0,6.28);ctx.fill()}
+      var short=id.replace('right_','R').replace('left_','L').replace('_frame','').replace('_pupil','P');
+      ctx.fillStyle=isSel?'#ff0':'#0f0';ctx.font=(10/z)+'px monospace';ctx.fillText(short,ppx+isP?16:10,pppy-10)
+    }
+    ctx.restore();
+    // Zoom indicator
+    ctx.fillStyle='#ff0';ctx.font='11px monospace';ctx.fillText(Math.round(z*100)+'%',5,15)
+  }
+  rvFitDone=true
+}
+
+// Panel interaction: wheel=zoom, drag=pan, click near point=adjust
+document.querySelectorAll('.rvP canvas').forEach(function(cvs,si){
+  var side=si===0?'left':si===1?'center':'right';
+  cvs.addEventListener('wheel',function(e){
+    e.preventDefault();var rect=cvs.getBoundingClientRect();
+    var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    var oz=rvZoom[si];var nz=Math.max(0.5,Math.min(5,oz*(e.deltaY<0?1.2:1/1.2)));
+    var ix=(mx-rvPan[si*2])/oz,iy=(my-rvPan[si*2+1])/oz;
+    rvZoom[si]=nz;rvPan[si*2]=mx-ix*nz;rvPan[si*2+1]=my-iy*nz;
+    drawRV()
+  },{passive:false});
+  cvs.addEventListener('mousedown',function(e){
+    var rect=cvs.getBoundingClientRect();var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    var idx=rvPtAt(side,mx,my);
+    if(idx!==null){rvDrag=idx;rvDragSide=side;drawRV();return}
+    // Pan
+    rvPanning=1;rvPanStart=[e.clientX,e.clientY];rvPanOrig=[rvPan[si*2],rvPan[si*2+1]]
+  });
+  cvs.addEventListener('mousemove',function(e){
+    var rect=cvs.getBoundingClientRect();var mx=e.clientX-rect.left,my=e.clientY-rect.top;
+    if(rvPanning){rvPan[si*2]=rvPanOrig[0]+(e.clientX-rvPanStart[0]);rvPan[si*2+1]=rvPanOrig[1]+(e.clientY-rvPanStart[1]);drawRV();return}
+    if(rvDrag!==null&&rvDragSide===side){
+      var z=rvZoom[si];var ix=(mx-rvPan[si*2])/z,iy=(my-rvPan[si*2+1])/z;
+      if(side==='left'){rvData[rvDrag].lx=Math.round(ix);rvData[rvDrag].ly=Math.round(iy)}
+      else if(side==='center'){rvData[rvDrag].cx=Math.round(ix);rvData[rvDrag].cy=Math.round(iy)}
+      else{rvData[rvDrag].rx=Math.round(ix);rvData[rvDrag].ry=Math.round(iy)}
+      drawRV()
+    }
+  })
+});
+
+document.addEventListener('mouseup',function(){
+  if(rvDrag!==null){rvDrag=null;rvDragSide=null;drawRV()}
+  rvPanning=0
+});
+
+function rvSwapLR(){
+  var tmp=rvImgs[0];rvImgs[0]=rvImgs[2];rvImgs[2]=tmp;
+  for(var i=0;i<rvData.length;i++){
+    var p=rvData[i];var tlx=p.lx,tly=p.ly,trx=p.rx,try2=p.ry;
+    p.lx=trx;p.ly=try2;p.rx=tlx;p.ry=tly
+  }
+  drawRV()
+}
+
+async function rvRecalc(){
+  document.getElementById('rvResult').textContent='复核计算中...';
+  for(var i=0;i<rvData.length;i++){
+    var p=rvData[i];
+    var resp=await fetch('/api/tri',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({lx:p.lx,ly:p.ly,cx:p.cx,cy:p.cy,rx:p.rx,ry:p.ry})});
+    var d=await resp.json();if(!d.error)p.p3d=d['3d']
+  }
+  pts=JSON.parse(JSON.stringify(rvData));
+  var rp=getPt('right_pupil'),lp=getPt('left_pupil');
+  var info='';
+  if(rp&&lp&&rp.p3d&&lp.p3d){
+    var dx=lp.p3d[0]-rp.p3d[0],dy=lp.p3d[1]-rp.p3d[1],pd=Math.sqrt(dx*dx+dy*dy);
+    info='复核 PD: '+pd.toFixed(1)+'mm';
+  }
+  document.getElementById('rvModal').classList.remove('show');
+  document.getElementById('st').textContent=info||'复核完成';
+  updateResults();draw()
+}
+
+function undo(){if(pts.length>0){var last=pts[pts.length-1];if(last.id.indexOf('frame_')>=0){var eye=last.id.split('_')[0];['_frame_top','_frame_bottom','_frame_inner','_frame_outer'].forEach(function(s){var k=eye+s;if(getPt(k)){for(var i=pts.length-1;i>=0;i--){if(pts[i].id===k){pts.splice(i,1);break}}}});step--}else{pts.pop();step--}draw()}}
+
+async function compute(){
+  if(pts.length===0){alert('Annotate pupils and frames first');return}
+  document.getElementById('st').textContent='Computing...';
+  var info='';
+  for(var i=0;i<pts.length;i++){var p=pts[i];var m=await apiMatch(p.cx,p.cy);p.lx=m.lx;p.ly=m.ly;p.rx=m.rx;p.ry=m.ry;p.p3d=m.p3d;
+    if(p.id.indexOf('pupil')>=0||p.id.indexOf('frame_bottom')>=0)info+=p.id+': Z='+(m.p3d?m.p3d[2].toFixed(0):'?')+'mm '}
+  draw();updateResults();document.getElementById('st').textContent=info||'Computed.';document.getElementById('btnReview').disabled=false
+}
+
+function report(){
+  var rp=getPt('right_pupil'),lp=getPt('left_pupil'),ri=getPt('right_frame_inner'),li=getPt('left_frame_inner');
+  if(!rp||!lp||!rp.p3d||!lp.p3d){alert('Annotate pupils first');return}
+  
+  // Compute results
+  var dx=lp.p3d[0]-rp.p3d[0],dy=lp.p3d[1]-rp.p3d[1],pd=Math.sqrt(dx*dx+dy*dy);
+  var mxMono=(ri&&li&&ri.p3d&&li.p3d)?(ri.p3d[0]+li.p3d[0])/2:0;
+  var rpd=ri&&ri.p3d?(mxMono-rp.p3d[0]):0,lpd=li&&li.p3d?(lp.p3d[0]-mxMono):0;
+  
+  // Generate annotated crop image
+  var allP=[];
+  for(var i=0;i<pts.length;i++){if(pts[i].cx>0){allP.push({x:pts[i].cx,y:pts[i].cy})}}
+  var minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  for(var i=0;i<allP.length;i++){var p=allP[i];if(p.x<minX)minX=p.x;if(p.x>maxX)maxX=p.x;if(p.y<minY)minY=p.y;if(p.y>maxY)maxY=p.y}
+  var pH=(maxX-minX)*.15,pV=(maxY-minY)*.3;
+  var cX=Math.max(0,minX-pH),cY=Math.max(0,minY-pV);
+  var cW=Math.min(W-cX,(maxX+pH)-cX),cH=Math.min(H-cY,(maxY+pV)-cY);
+  
+  var rcv=document.createElement('canvas');
+  var s=580/cW;rcv.width=Math.round(cW*s);rcv.height=Math.round(cH*s);
+  var rx=rcv.getContext('2d');
+  rx.drawImage(img,cX,cY,cW,cH,0,0,rcv.width,rcv.height);
+  
+  // Draw annotations on report canvas
+  function cx(x){return(x-cX)*s} function cy(y){return(y-cY)*s}
+  // Frame boxes
+  for(var ei=0;ei<2;ei++){var eye=ei===0?'right':'left',t=getPt(eye+'_frame_top'),b=getPt(eye+'_frame_bottom'),inn=getPt(eye+'_frame_inner'),out=getPt(eye+'_frame_outer');
+    if(t&&b&&inn&&out){
+      var lx2=Math.min(cx(inn.cx),cx(out.cx)),rx2=Math.max(cx(inn.cx),cx(out.cx)),ty2=cy(t.cy),by2=cy(b.cy);
+      rx.fillStyle='rgba(74,144,217,.08)';rx.fillRect(lx2,ty2,rx2-lx2,by2-ty2);
+      rx.strokeStyle='#4A90D9';rx.lineWidth=.75;rx.setLineDash([4,3]);rx.strokeRect(lx2,ty2,rx2-lx2,by2-ty2);rx.setLineDash([])
+    }
+  }
+  // Pupil icons
+  for(var i=0;i<pts.length;i++){var p=pts[i];if(p.id.indexOf('pupil')>=0){var px=cx(p.cx),py=cy(p.cy);
+    rx.setLineDash([3,3]);rx.strokeStyle='rgba(255,255,255,.7)';rx.lineWidth=.75;rx.beginPath();rx.arc(px,py,14,0,6.283);rx.stroke();
+    rx.strokeStyle='rgba(241,196,15,.8)';rx.lineWidth=.5;rx.beginPath();rx.arc(px,py,4,0,6.283);rx.stroke();
+    rx.strokeStyle='#E74C3C';rx.lineWidth=.75;rx.beginPath();rx.moveTo(px-19,py);rx.lineTo(px+19,py);rx.moveTo(px,py-19);rx.lineTo(px,py+19);rx.stroke();rx.setLineDash([])
+  }}
+  // Eye level line
+  if(rp&&lp){rx.strokeStyle='#27AE60';rx.lineWidth=1;rx.setLineDash([4,4]);rx.beginPath();rx.moveTo(cx(rp.cx),cy(rp.cy));rx.lineTo(cx(lp.cx),cy(lp.cy));rx.stroke();rx.setLineDash([])}
+  // Frame center line
+  if(ri&&li){rx.strokeStyle='rgba(255,255,255,.5)';rx.lineWidth=.75;rx.setLineDash([6,4]);var fcx=cx((ri.cx+li.cx)/2);rx.beginPath();rx.moveTo(fcx,0);rx.lineTo(fcx,rcv.height);rx.stroke();rx.setLineDash([])}
+  // PD arrow
+  if(rp&&lp){var midY=(cy(rp.cy)+cy(lp.cy))/2,aY=midY-38;rx.strokeStyle='#E74C3C';rx.lineWidth=.75;rx.setLineDash([4,3]);rx.beginPath();rx.moveTo(cx(rp.cx),aY);rx.lineTo(cx(lp.cx),aY);rx.stroke();rx.setLineDash([]);
+    rx.fillStyle='#E74C3C';rx.beginPath();rx.arc(cx(rp.cx),aY,1.5,0,6.283);rx.fill();rx.beginPath();rx.arc(cx(lp.cx),aY,1.5,0,6.283);rx.fill();
+    rx.font='bold 13px "Microsoft YaHei",sans-serif';rx.fillStyle='#E74C3C';rx.textAlign='center';rx.fillText('PD: '+pd.toFixed(1)+'mm',(cx(rp.cx)+cx(lp.cx))/2,aY-7)}
+  // PH arrows
+  for(var ei=0;ei<2;ei++){var eye=ei===0?'right':'left',pp=getPt(eye+'_pupil'),bb=getPt(eye+'_frame_bottom');if(pp&&bb&&pp.p3d&&bb.p3d){var ph=bb.p3d[1]-pp.p3d[1];var lx3=cx(pp.cx)+(eye==='right'?-25:25),tY=cy(pp.cy),bY=cy(bb.cy);
+    rx.strokeStyle='#F39C12';rx.lineWidth=.75;rx.setLineDash([4,3]);rx.beginPath();rx.moveTo(lx3,bY);rx.lineTo(lx3,tY);rx.stroke();rx.setLineDash([]);
+    rx.fillStyle='#F39C12';rx.beginPath();rx.arc(lx3,bY,1.5,0,6.283);rx.fill();rx.beginPath();rx.arc(lx3,tY,1.5,0,6.283);rx.fill();
+    rx.font='bold 11px "Microsoft YaHei",sans-serif';rx.fillStyle='#F39C12';if(eye==='right'){rx.textAlign='right';rx.fillText('PH: '+ph.toFixed(1)+'mm',lx3-5,(tY+bY)/2+4)}else{rx.textAlign='left';rx.fillText('PH: '+ph.toFixed(1)+'mm',lx3+5,(tY+bY)/2+4)}
+  }}
+  
+  rcv.style.maxWidth='100%';
+  document.getElementById('rimg').innerHTML='';document.getElementById('rimg').appendChild(rcv);
+  
+  // Data table
+  var rows=[ ['瞳距',pd.toFixed(1)+' mm','立体测量'],['右单眼瞳距',rpd.toFixed(1)+' mm',''],['左单眼瞳距',lpd.toFixed(1)+' mm',''] ];
+  for(var ei=0;ei<2;ei++){var eye2=ei===0?'right':'left',pp2=getPt(eye2+'_pupil'),bb2=getPt(eye2+'_frame_bottom');if(pp2&&bb2&&pp2.p3d&&bb2.p3d)rows.push([eye2==='right'?'右眼瞳高':'左眼瞳高',(bb2.p3d[1]-pp2.p3d[1]).toFixed(1)+' mm','立体测量'])}
+  for(var ei=0;ei<2;ei++){var eye3=ei===0?'right':'left',ii=getPt(eye3+'_frame_inner'),oo=getPt(eye3+'_frame_outer'),tt=getPt(eye3+'_frame_top'),tb=getPt(eye3+'_frame_bottom');
+    if(ii&&oo&&ii.p3d&&oo.p3d)rows.push([eye3==='right'?'右镜圈宽度':'左镜圈宽度',Math.abs(oo.p3d[0]-ii.p3d[0]).toFixed(1)+' mm','']);
+    if(tt&&tb&&tt.p3d&&tb.p3d)rows.push([eye3==='right'?'右镜圈高度':'左镜圈高度',Math.abs(tb.p3d[1]-tt.p3d[1]).toFixed(1)+' mm',''])}
+  var h='<thead><tr><th>参数</th><th>测量值</th><th>备注</th></tr></thead><tbody>';
+  for(var ri2=0;ri2<rows.length;ri2++){h+='<tr><td>'+rows[ri2][0]+'</td><td>'+rows[ri2][1]+'</td><td>'+rows[ri2][2]+'</td></tr>'}
+  h+='</tbody>';
+  document.getElementById('rtable').innerHTML=h;
+  
+  // Suggestions
+  var sug=[],fw=Math.abs(getPt('right_frame_outer')&&getPt('right_frame_inner')?Math.abs(getPt('right_frame_outer').p3d[0]-getPt('right_frame_inner').p3d[0]):0);
+  sug.push('推荐镜片直径：≥ '+(Math.round(fw+10))+' mm（框宽+余量）');
+  if(Math.abs(rpd-lpd)>1)sug.push('左右单眼瞳距差 '+Math.abs(rpd-lpd).toFixed(1)+'mm，建议加工时区分左右眼');
+  if(Math.abs(rpd-lpd)>2)sug.push('较大单眼瞳距不对称，请确认标注准确性');
+  document.getElementById('rsug').innerHTML='';for(var si=0;si<sug.length;si++){var li=document.createElement('li');li.textContent=sug[si];document.getElementById('rsug').appendChild(li)}
+  
+  // Metadata
+  var now=new Date();document.getElementById('rid').textContent='OM-'+now.getFullYear()+('0'+(now.getMonth()+1)).slice(-2)+('0'+now.getDate()).slice(-2)+'-'+('0'+now.getHours()).slice(-2)+('0'+now.getMinutes()).slice(-2)+('0'+now.getSeconds()).slice(-2);
+  document.getElementById('rdt').textContent=now.getFullYear()+'-'+('0'+(now.getMonth()+1)).slice(-2)+'-'+('0'+now.getDate()).slice(-2);
+  document.getElementById('modal').classList.add('show')
+}
+
+async function saveReport(){
+  var close=document.getElementById('rclose'),save=document.getElementById('rsave');
+  close.style.display='none';save.style.display='none';
+  try{var c=await html2canvas(document.getElementById('rpt'),{scale:2,backgroundColor:'#fff',useCORS:true,allowTaint:true});close.style.display='';save.style.display='';
+    var a=document.createElement('a');a.download='戴镜测量AI分析报告_'+document.getElementById('rid').textContent+'.png';a.href=c.toDataURL('image/png');a.click()}
+  catch(e){close.style.display='';save.style.display='';alert('Save failed: '+e.message)}
+}
+var setData = {};
+
+async function toggleSettings(){
+  var m = document.getElementById('setModal');
+  if(m.classList.contains('show')){m.classList.remove('show');return}
+  m.classList.add('show');
+  document.getElementById('setContent').innerHTML='';
+  document.getElementById('setLoading').style.display='block';
+  try{
+    var r = await fetch('/api/cam_props'); setData = await r.json();
+    document.getElementById('setLoading').style.display='none';
+    buildSettingsUI()
+  }catch(e){
+    document.getElementById('setLoading').style.display='none';
+    document.getElementById('setContent').innerHTML='<span style=color:#f00>'+e.message+'</span>'
+  }
+}
+
+function buildSettingsUI(){
+  var sides = ['left','center','right'];
+  var labels = {'whitebalance':'色温','brightness':'亮度','saturation':'饱和度','exposure':'曝光'};
+  var names = {'left':'左摄','center':'中摄','right':'右摄'};
+  var html = '';
+  for(var si=0;si<sides.length;si++){
+    var side = sides[si];
+    var props = setData[side];
+    if(!props){continue}
+    html += '<div class=camBlock><h4>'+names[side]+'</h4>';
+    for(var pk in labels){
+      var p = props[pk];
+      if(!p) continue;
+      var v = p.value, mn = p.min, mx = p.max;
+      html += '<div class=row><span class=lbl>'+labels[pk]+'</span>';
+      html += '<input type=range min='+mn+' max='+mx+' value='+v+' data-side='+side+' data-prop='+pk+' oninput=rangeUpdate(this)>';
+      html += '<span class=val>'+v+(p.unit||'')+'</span>';
+      html += '<button class=btn onclick=setOneProp("'+side+'","'+pk+'")>应用</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+  document.getElementById('setContent').innerHTML = html
+}
+
+function rangeUpdate(el){
+  var row = el.parentElement;
+  var valEl = row.querySelector('.val');
+  if(valEl){
+    var u = '';
+    var props = setData[el.dataset.side];
+    if(props && props[el.dataset.prop]){
+      u = props[el.dataset.prop].unit || ''
+    }
+    valEl.textContent = el.value + u
+  }
+}
+
+async function setOneProp(side, prop){
+  var inp = document.querySelector('input[data-side='+side+'][data-prop='+prop+']');
+  if(!inp) return;
+  try{
+    var r = await fetch('/api/cam_set',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({side:side,prop:prop,value:parseInt(inp.value)})
+    });
+    var d = await r.json();
+    if(d.error){alert(d.error)}
+  }catch(e){alert(e.message)}
+}
+
+async function saveAllSettings(){
+  var inputs = document.querySelectorAll('#setContent input[type=range]');
+  for(var i=0;i<inputs.length;i++){
+    var inp = inputs[i];
+    try{
+      await fetch('/api/cam_set',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({side:inp.dataset.side,prop:inp.dataset.prop,value:parseInt(inp.value)})
+      })
+    }catch(e){}
+  }
+  // Also save WB to config file for capture exe
+  var wbInp = document.querySelector('input[data-prop=whitebalance]');
+  if(wbInp){
+    try{
+      await fetch('/api/save_wb',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({wb:parseInt(wbInp.value)})
+      })
+    }catch(e){}
+  }
+  alert('设置已保存')
+}
+</script>
+</body>
+</html>
