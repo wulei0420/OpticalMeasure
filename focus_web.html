@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>三摄调焦工具</title>
+<style>
+  body { font-family: monospace; background: #111; color: #0f0; margin: 0; padding: 10px; }
+  h2 { color: #0ff; margin: 5px 0; }
+  canvas { display: block; border: 2px solid #333; max-width: 100%; }
+  .controls { display: flex; gap: 10px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  button { padding: 8px 16px; font-size: 14px; cursor: pointer; margin: 2px; }
+  button.active { background: #0a0; color: #fff; border-color: #0f0; }
+  select, input { padding: 4px 8px; font-size: 13px; background: #222; color: #fff; border: 1px solid #555; }
+  .info { color: #ff0; font-size: 13px; margin-left: 10px; }
+  .crosshair { position: absolute; pointer-events: none; color: #f00; font-size: 20px; }
+</style>
+</head>
+<body>
+<h2>三摄调焦工具</h2>
+
+<div class="controls">
+  <label>选择摄像头:</label>
+  <select id="camSelect"></select>
+  <button onclick="openCam()">📷 打开</button>
+  <button onclick="zoomIn()">🔍 放大</button>
+  <button onclick="zoomOut()">🔍 缩小</button>
+  <span class="info">缩放: <span id="zoomVal">1.0x</span></span>
+  <span class="info">分辨率: <span id="resInfo">--</span></span>
+  <span class="info">锐度: <span id="sharpInfo">--</span></span>
+</div>
+
+<div style="position:relative; display:inline-block;">
+  <canvas id="canvas"></canvas>
+</div>
+<div style="margin-top:8px; color:#888; font-size:12px;">
+  鼠标滚轮=缩放 | 按住左键拖拽=平移 | 切换摄像头=重新打开对应画面
+</div>
+
+<script>
+var stream = null;
+var video = document.createElement('video');
+video.autoplay = true;
+video.playsInline = true;
+video.muted = true;
+var zoom = 1.0;
+var panX = 0, panY = 0;
+var dragging = false, dragStartX = 0, dragStartY = 0, panStartX = 0, panStartY = 0;
+var canvas = document.getElementById('canvas');
+var ctx = canvas.getContext('2d');
+var frameW = 0, frameH = 0;
+var animId = null;
+var cams = [];
+
+async function init() {
+  var test = await navigator.mediaDevices.getUserMedia({ video: true });
+  test.getTracks().forEach(function(t) { t.stop(); });
+  var devices = await navigator.mediaDevices.enumerateDevices();
+  cams = devices.filter(function(d) { return d.kind === 'videoinput'; });
+  var sel = document.getElementById('camSelect');
+  sel.innerHTML = '';
+  for (var i = 0; i < cams.length; i++) {
+    sel.innerHTML += '<option value="' + i + '">摄像头 #' + i + ' ' + (cams[i].label||'').substring(0,20) + '</option>';
+  }
+}
+init();
+
+async function openCam() {
+  if (stream) { stream.getTracks().forEach(function(t) { t.stop(); }); stream = null; }
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+  zoom = 1.0; panX = 0; panY = 0;
+  document.getElementById('zoomVal').textContent = '1.0x';
+
+  var camIdx = parseInt(document.getElementById('camSelect').value);
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: cams[camIdx].deviceId }, width: 3840, height: 2160 }
+    });
+  } catch(e) {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { deviceId: { exact: cams[camIdx].deviceId }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+    });
+  }
+  video.srcObject = stream;
+  await video.play();
+  await new Promise(function(r) { setTimeout(r, 500); });
+  frameW = video.videoWidth;
+  frameH = video.videoHeight;
+  document.getElementById('resInfo').textContent = frameW + 'x' + frameH;
+  renderLoop();
+}
+
+function zoomIn()  { zoom = Math.min(8, zoom * 1.5); updateZoom(); }
+function zoomOut() { zoom = Math.max(1, zoom / 1.5); updateZoom(); }
+function updateZoom() { document.getElementById('zoomVal').textContent = zoom.toFixed(1) + 'x'; }
+
+function renderLoop() {
+  if (!stream) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  var cw = Math.round(frameW / zoom);
+  var ch = Math.round(frameH / zoom);
+  var sx = Math.max(0, Math.min(frameW - cw, frameW / 2 - cw / 2 + panX));
+  var sy = Math.max(0, Math.min(frameH - ch, frameH / 2 - ch / 2 + panY));
+
+  canvas.width = 1280;
+  canvas.height = Math.round(1280 * ch / cw);
+  ctx.drawImage(video, sx, sy, cw, ch, 0, 0, canvas.width, canvas.height);
+
+  // 中心十字
+  var cx = canvas.width / 2, cy = canvas.height / 2;
+  ctx.strokeStyle = 'rgba(255,0,0,0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(cx, cy - 50); ctx.lineTo(cx, cy + 50);
+  ctx.moveTo(cx - 50, cy); ctx.lineTo(cx + 50, cy); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 锐度
+  var imgData = ctx.getImageData(cx - 50, cy - 50, 100, 100);
+  var gray = new Float32Array(10000);
+  for (var i = 0; i < 10000; i++) gray[i] = imgData.data[i * 4];
+  var mean = gray.reduce(function(a,b){return a+b;}, 0) / 10000;
+  var lap = gray.reduce(function(a,b){return a + (b-mean)*(b-mean);}, 0) / 10000;
+  document.getElementById('sharpInfo').textContent = '锐度:' + Math.round(lap);
+
+  ctx.fillStyle = '#0f0';
+  ctx.font = '14px monospace';
+  ctx.fillText('Zoom:' + zoom.toFixed(1) + 'x | ' + frameW + 'x' + frameH + ' | Sharpness:' + Math.round(lap), 10, 20);
+
+  animId = requestAnimationFrame(renderLoop);
+}
+
+// 滚轮缩放
+canvas.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  if (e.deltaY < 0) zoomIn(); else zoomOut();
+});
+
+// 左键拖拽平移
+canvas.addEventListener('mousedown', function(e) {
+  dragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  panStartX = panX; panStartY = panY;
+});
+canvas.addEventListener('mousemove', function(e) {
+  if (!dragging) return;
+  panX = panStartX + (dragStartX - e.clientX);
+  panY = panStartY + (dragStartY - e.clientY);
+});
+canvas.addEventListener('mouseup', function() { dragging = false; });
+canvas.addEventListener('mouseleave', function() { dragging = false; });
+</script>
+</body>
+</html>
