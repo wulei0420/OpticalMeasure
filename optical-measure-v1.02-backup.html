@@ -1,0 +1,2297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpticalMeasure V1.0 — 眼镜瞳距瞳高测量系统</title>
+<style>
+/* ============ 全局样式 ============ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg-main: #0f0f1a;
+  --bg-panel: #181825;
+  --bg-section: #1e1e30;
+  --bg-input: #12121f;
+  --border: #2a2a40;
+  --text: #c8c8d8;
+  --text-dim: #707088;
+  --text-bright: #e8e8f8;
+  --accent: #4a90d9;
+  --accent-hover: #5aa0e9;
+  --success: #27ae60;
+  --warning: #f0ad4e;
+  --danger: #e74c3c;
+  --info: #3498db;
+  --pupil-red: #E74C3C;
+  --pupil-yellow: rgba(241,196,15,0.8);
+  --frame-blue: #4A90D9;
+  --canvas-bg: #1a1a2e;
+  --font-mono: 'Consolas', 'Courier New', monospace;
+}
+html, body { width: 100%; height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+  font-size: 13px; color: var(--text);
+  background: var(--bg-main);
+  display: flex; flex-direction: column;
+  user-select: none;
+  -webkit-user-select: none;
+}
+#app {
+  display: flex; flex-direction: column;
+  flex: 1; min-height: 0;
+}
+
+/* ============ 顶部工具栏 ============ */
+#toolbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 6px 16px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+  min-height: 44px;
+}
+#toolbar h1 {
+  font-size: 16px; font-weight: 600; color: var(--text-bright);
+  letter-spacing: 1px; margin-right: auto;
+}
+#toolbar h1 span { color: var(--accent); font-weight: 300; font-size: 12px; margin-left: 6px; }
+.toolbar-btn {
+  padding: 6px 16px; border: 1px solid var(--accent); border-radius: 4px;
+  background: transparent; color: var(--accent); cursor: pointer;
+  font-size: 13px; transition: all 0.2s; font-family: inherit;
+}
+.toolbar-btn:hover { background: var(--accent); color: #fff; }
+#file-input { display: none; }
+
+/* ============ 主内容区 ============ */
+#main-content { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+
+/* 画布容器 */
+#canvas-container {
+  flex: 1; position: relative; overflow: hidden;
+  background: var(--canvas-bg);
+  min-width: 0;
+}
+#main-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+/* 浮动提示条 */
+#floating-hint {
+  position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.78); color: #fff; padding: 8px 20px;
+  border-radius: 6px; font-size: 14px; pointer-events: none;
+  transition: opacity 0.3s; white-space: nowrap; z-index: 5;
+}
+#floating-hint.hidden { opacity: 0; }
+
+/* 控制面板 */
+#panel {
+  width: 320px; flex-shrink: 0; overflow-y: auto;
+  background: var(--bg-panel); border-left: 1px solid var(--border);
+  padding: 12px; display: flex; flex-direction: column; gap: 10px;
+}
+.section {
+  background: var(--bg-section); border-radius: 6px;
+  padding: 10px 12px; border: 1px solid var(--border);
+}
+.section h3 {
+  font-size: 13px; color: var(--accent); margin-bottom: 8px;
+  font-weight: 600; letter-spacing: 0.5px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--border);
+}
+
+/* 参数输入 */
+.param-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px; font-size: 12px;
+}
+.param-row label { color: var(--text-dim); flex-shrink: 0; }
+.param-row input {
+  width: 80px; padding: 4px 8px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--bg-input); color: var(--text-bright);
+  font-size: 13px; text-align: right; font-family: var(--font-mono);
+  outline: none; transition: border 0.2s;
+}
+.param-row input:focus { border-color: var(--accent); }
+.param-row .unit { margin-left: 4px; color: var(--text-dim); font-size: 11px; }
+
+/* 步骤指示器 */
+#step-list { display: flex; flex-direction: column; gap: 2px; }
+.step-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; border-radius: 4px; font-size: 12px;
+  transition: background 0.2s;
+}
+.step-item.current { background: rgba(240,173,78,0.15); }
+.step-item.completed { color: var(--success); }
+.step-item .step-icon {
+  width: 18px; text-align: center; font-size: 12px; flex-shrink: 0;
+}
+.step-item .step-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.step-item.pending { color: var(--text-dim); }
+
+/* 比例尺/结果区域 */
+.info-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 3px 0; font-size: 12px;
+}
+.info-row .label { color: var(--text-dim); }
+.info-row .value { color: var(--text-bright); font-family: var(--font-mono); font-weight: 500; }
+.warning-row { font-size: 11px; padding: 4px 6px; border-radius: 4px; margin-top: 2px; }
+.warning-green { color: var(--success); }
+.warning-yellow { color: var(--warning); }
+.warning-red { color: var(--danger); }
+
+/* 按钮行 */
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.panel-btn {
+  flex: 1; min-width: 70px; padding: 7px 10px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--bg-input); color: var(--text);
+  cursor: pointer; font-size: 12px; font-family: inherit;
+  transition: all 0.2s; text-align: center;
+}
+.panel-btn:hover { border-color: var(--accent); color: var(--text-bright); }
+.panel-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.panel-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.panel-btn.primary:hover { background: var(--accent-hover); }
+
+/* ============ 状态栏 ============ */
+#status-bar {
+  display: flex; align-items: center; gap: 24px;
+  padding: 4px 16px; background: var(--bg-panel);
+  border-top: 1px solid var(--border); flex-shrink: 0;
+  font-size: 11px; color: var(--text-dim); min-height: 28px;
+}
+#status-bar span { font-family: var(--font-mono); }
+.status-sep { color: var(--border); }
+
+/* ============ 放大镜 ============ */
+#magnifier-container {
+  display: none; position: fixed; width: 150px; height: 150px;
+  border-radius: 50%; overflow: hidden;
+  border: 2px solid rgba(255,255,255,0.8);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  pointer-events: none; z-index: 100;
+}
+#magnifier-canvas { width: 100%; height: 100%; display: block; }
+
+/* ============ 报告模态窗 ============ */
+#report-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7); z-index: 200;
+  justify-content: center; align-items: flex-start;
+  overflow-y: auto; padding: 40px 20px;
+}
+#report-overlay.show { display: flex; }
+#report-container {
+  background: #fff; color: #222; width: 700px; max-width: 100%;
+  border-radius: 8px; padding: 30px 28px; font-size: 13px;
+  position: relative; box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+}
+#report-container h2 { text-align: center; margin-bottom: 4px; font-size: 20px; color: #111; }
+#report-container .subtitle { text-align: center; color: #666; font-size: 11px; margin-bottom: 16px; }
+#report-container .report-sep { border: none; border-top: 1px dashed #ddd; margin: 14px 0; }
+#report-canvas-wrap { text-align: center; margin-bottom: 12px; }
+#report-canvas-wrap canvas { max-width: 100%; border: 1px solid #ddd; border-radius: 4px; }
+.report-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+.report-table th, .report-table td {
+  border: 1px solid #ddd; padding: 6px 10px; text-align: center;
+}
+.report-table th { background: #f5f5f5; font-weight: 600; }
+.report-suggestions { background: #f9f9f9; padding: 10px 14px; border-radius: 4px; margin: 8px 0; }
+.report-suggestions li { margin: 4px 0; font-size: 12px; }
+.report-footer { font-size: 11px; color: #888; margin-top: 10px; }
+.report-note { font-size: 11px; color: #e74c3c; margin-top: 6px; }
+#report-close { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 22px; cursor: pointer; color: #888; line-height: 1; }
+#report-save {
+  display: block; margin: 16px auto 0; padding: 10px 32px;
+  background: #4a90d9; color: #fff; border: none; border-radius: 4px;
+  font-size: 14px; cursor: pointer; font-family: inherit;
+}
+
+/* ============ Toast 通知 ============ */
+#toast-container {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  z-index: 300; display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 24px; border-radius: 6px; font-size: 13px;
+  color: #fff; background: rgba(30,30,30,0.92);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  animation: toastIn 0.3s ease; white-space: nowrap;
+  pointer-events: auto;
+}
+.toast.warn { border-left: 3px solid var(--warning); }
+.toast.error { border-left: 3px solid var(--danger); }
+.toast.info { border-left: 3px solid var(--info); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============ 响应式 ============ */
+@media (max-width: 900px) {
+  #panel { width: 260px; font-size: 11px; }
+  #toolbar h1 { font-size: 14px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ============ HTML 结构 ============ -->
+<div id="app">
+
+  <!-- 顶部工具栏 -->
+  <div id="toolbar">
+    <h1>OpticalMeasure <span>V1.0</span></h1>
+    <button class="toolbar-btn" id="btn-load">&#x1F4C2; 加载照片</button>
+    <input type="file" id="file-input" accept="image/*,.jpg,.jpeg,.png,.webp,.bmp">
+  </div>
+
+  <!-- 主内容区 -->
+  <div id="main-content">
+    <!-- 画布区域 -->
+    <div id="canvas-container">
+      <canvas id="main-canvas"></canvas>
+      <div id="floating-hint" class="hidden">步骤 1/10：请标注右眼瞳孔中心</div>
+    </div>
+
+    <!-- 右侧控制面板 -->
+    <div id="panel">
+      <!-- 镜架参数 -->
+      <div class="section">
+        <h3>&#x2699; 镜架参数</h3>
+        <div class="param-row">
+          <label>镜圈宽度</label>
+          <input type="number" id="param-lens-width" placeholder="mm" step="0.1" min="0" max="100">
+          <span class="unit">mm</span>
+        </div>
+        <div class="param-row">
+          <label>中梁宽度</label>
+          <input type="number" id="param-bridge-width" placeholder="mm" step="0.1" min="0" max="50">
+          <span class="unit">mm</span>
+        </div>
+        <div class="param-row">
+          <label>镜片高度</label>
+          <input type="number" id="param-lens-height" placeholder="mm" step="0.1" min="0" max="100">
+          <span class="unit">mm</span>
+        </div>
+      </div>
+
+      <!-- 标注步骤 -->
+      <div class="section">
+        <h3>&#x1F4CD; 标注步骤</h3>
+        <div id="step-list"></div>
+      </div>
+
+      <!-- 比例尺 -->
+      <div class="section" id="scale-section">
+        <h3>&#x1F4CF; 比例尺</h3>
+        <div class="info-row"><span class="label">水平比例尺</span><span class="value" id="val-scale-h">--</span></div>
+        <div class="info-row"><span class="label">垂直比例尺</span><span class="value" id="val-scale-v">--</span></div>
+        <div class="info-row"><span class="label">偏差率</span><span class="value" id="val-disc">--</span></div>
+        <div class="info-row"><span class="label">估计前倾角</span><span class="value" id="val-tilt">--</span></div>
+        <div id="tilt-warning" style="display:none;"></div>
+      </div>
+
+      <!-- 测量结果 -->
+      <div class="section">
+        <h3>&#x1F4CA; 测量结果</h3>
+        <div class="info-row"><span class="label">瞳距</span><span class="value" id="val-pd">--</span></div>
+        <div class="info-row"><span class="label">右单眼PD</span><span class="value" id="val-rpd">--</span></div>
+        <div class="info-row"><span class="label">左单眼PD</span><span class="value" id="val-lpd">--</span></div>
+        <div class="info-row"><span class="label">不对称</span><span class="value" id="val-asym">--</span></div>
+        <div id="mono-warning" style="display:none;"></div>
+        <div class="info-row"><span class="label">右眼瞳高</span><span class="value" id="val-ph-r">--</span></div>
+        <div class="info-row"><span class="label">左眼瞳高</span><span class="value" id="val-ph-l">--</span></div>
+        <div class="info-row"><span class="label">双眼水平</span><span class="value" id="val-level">--</span></div>
+      </div>
+
+      <!-- 外院瞳距交叉验证 -->
+      <div class="section">
+        <h3>&#x1F50D; 交叉验证</h3>
+        <div class="param-row">
+          <label>外院瞳距</label>
+          <input type="number" id="param-external-pd" placeholder="选填" step="0.1" min="0" max="100">
+          <span class="unit">mm</span>
+        </div>
+        <div id="cross-validation-result" style="display:none;"></div>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="section">
+        <div class="btn-row">
+          <button class="panel-btn" id="btn-undo" disabled>&#x21A9; 撤销</button>
+          <button class="panel-btn" id="btn-reset">&#x21BA; 重置</button>
+        </div>
+        <div class="btn-row" style="margin-top:6px;">
+          <button class="panel-btn primary" id="btn-report" disabled>&#x1F4C4; 生成报告</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 状态栏 -->
+  <div id="status-bar">
+    <span>&#x1F5B1; 坐标:</span><span id="status-coords">(0, 0)</span>
+    <span class="status-sep">|</span>
+    <span>&#x1F50D; 缩放:</span><span id="status-zoom">100%</span>
+    <span class="status-sep">|</span>
+    <span>&#x1F4F7; 照片:</span><span id="status-photo-size">未加载</span>
+    <span class="status-sep">|</span>
+    <span>&#x1F4CB; 进度:</span><span id="status-progress">0/10</span>
+  </div>
+</div>
+
+<!-- 放大镜 -->
+<div id="magnifier-container">
+  <canvas id="magnifier-canvas" width="300" height="300"></canvas>
+</div>
+
+<!-- 报告模态窗 -->
+<div id="report-overlay">
+  <div id="report-container">
+    <button id="report-close">&times;</button>
+    <h2>旧时候眼镜店 戴镜测量AI分析报告</h2>
+    <div class="subtitle">OpticalMeasure V1.0</div>
+    <hr class="report-sep">
+    <div id="report-canvas-wrap"></div>
+    <hr class="report-sep">
+    <h3 style="font-size:15px;margin-bottom:6px;">&#x1F4CA; 测量数据</h3>
+    <table class="report-table" id="report-table"></table>
+    <h3 style="font-size:15px;margin:10px 0 6px;">&#x1F4DD; 配镜建议</h3>
+    <ul class="report-suggestions" id="report-suggestions"></ul>
+    <hr class="report-sep">
+    <div class="report-footer">
+      <div>测量编号：<span id="report-id">--</span></div>
+      <div>测量日期：<span id="report-date">--</span></div>
+      <div>测量工具：OpticalMeasure V1.0</div>
+      <div>操作人员：________</div>
+    </div>
+    <div class="report-note">&#x26A0; 本测量基于照片分析，建议结合专业设备复核确认。</div>
+    <button id="report-save">&#x1F4BE; 保存报告图片 (PNG)</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast-container"></div>
+
+<!-- 第三方库 -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+<script>
+// ============================================================================
+//  I. 配置常量
+// ============================================================================
+
+/** 10个标注点定义（固定顺序） */
+const LANDMARK_DEFINITIONS = [
+  { id: 'right_pupil',        type: 'pupil', eye: 'right', position: 'center', label: '右眼瞳孔' },
+  { id: 'left_pupil',         type: 'pupil', eye: 'left',  position: 'center', label: '左眼瞳孔' },
+  { id: 'right_frame_top',    type: 'frame', eye: 'right', position: 'top',    label: '右镜圈-上边缘' },
+  { id: 'right_frame_bottom', type: 'frame', eye: 'right', position: 'bottom', label: '右镜圈-下边缘' },
+  { id: 'right_frame_inner',  type: 'frame', eye: 'right', position: 'inner',  label: '右镜圈-内侧边(靠鼻)' },
+  { id: 'right_frame_outer',  type: 'frame', eye: 'right', position: 'outer',  label: '右镜圈-外侧边(靠耳)' },
+  { id: 'left_frame_top',     type: 'frame', eye: 'left',  position: 'top',    label: '左镜圈-上边缘' },
+  { id: 'left_frame_bottom',  type: 'frame', eye: 'left',  position: 'bottom', label: '左镜圈-下边缘' },
+  { id: 'left_frame_inner',   type: 'frame', eye: 'left',  position: 'inner',  label: '左镜圈-内侧边(靠鼻)' },
+  { id: 'left_frame_outer',   type: 'frame', eye: 'left',  position: 'outer',  label: '左镜圈-外侧边(靠耳)' },
+];
+
+/** 物理常量 */
+const PHYSICAL = {
+  IRIS_DIAMETER_MM: 12,    // 虹膜直径 mm
+  PUPIL_DIAMETER_MM: 3,    // 瞳孔直径 mm
+  DEFAULT_PUPIL_RADIUS_PX: 35, // 未计算比例尺时的默认外圆半径 px
+  DEFAULT_PUPIL_INNER_PX: 9,   // 未计算比例尺时的默认内圆半径 px
+};
+
+/** 颜色常量 */
+const COLORS = {
+  CROSSHAIR: 'rgba(52,152,219,0.5)',
+  REFERENCE_LINE: 'rgba(230,126,34,0.6)',
+  EYE_LEVEL: '#27AE60',
+  EXTENDED_LINE: 'rgba(149,165,166,0.5)',
+  FRAME_BOX_STROKE: '#4A90D9',
+  FRAME_BOX_FILL: 'rgba(74,144,217,0.08)',
+  PUPIL_OUTER: 'rgba(255,255,255,0.7)',
+  PUPIL_INNER: 'rgba(241,196,15,0.8)',
+  PUPIL_CROSS: '#E74C3C',
+  PUPIL_CENTER: '#E74C3C',
+  PD_ARROW: '#E74C3C',
+  PH_ARROW: '#F39C12',
+};
+
+/** 对称点映射：标注当前点时，查找对侧同位置点 */
+const SYMMETRY_MAP = {
+  right_frame_top: 'left_frame_top',
+  right_frame_bottom: 'left_frame_bottom',
+  right_frame_inner: 'left_frame_inner',
+  right_frame_outer: 'left_frame_outer',
+  left_frame_top: 'right_frame_top',
+  left_frame_bottom: 'right_frame_bottom',
+  left_frame_inner: 'right_frame_inner',
+  left_frame_outer: 'right_frame_outer',
+};
+
+// ============================================================================
+//  II. 全局状态
+// ============================================================================
+
+const appState = {
+  image: null,              // HTMLImageElement
+  imageLoaded: false,
+  photoWidth: 0,
+  photoHeight: 0,
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0,
+  currentStepIndex: 0,
+  landmarks: {},            // key → {x, y, placed}
+  frameParams: {
+    lensWidth: null,
+    bridgeWidth: null,
+    lensHeight: null,
+  },
+  externalPD: null,
+  showMagnifier: false,
+  magnifierPhotoX: 0,
+  magnifierPhotoY: 0,
+  activeDragLandmark: null, // 当前拖拽的标注点 ID
+  isPanning: false,
+  panStartScreenX: 0,
+  panStartScreenY: 0,
+  panStartOffsetX: 0,
+  panStartOffsetY: 0,
+  spacePressed: false,
+  mousePhotoX: 0,
+  mousePhotoY: 0,
+  mouseScreenX: 0,
+  mouseScreenY: 0,
+  mouseOnCanvas: false,
+  undoStack: [],
+  hintTimer: null,
+  magnifierTimer: null,
+};
+
+// ============================================================================
+//  III. DOM 引用
+// ============================================================================
+
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const dom = {
+  canvas: $('#main-canvas'),
+  ctx: null,
+  container: $('#canvas-container'),
+  hint: $('#floating-hint'),
+  magnifierContainer: $('#magnifier-container'),
+  magnifierCanvas: $('#magnifier-canvas'),
+  magnifierCtx: null,
+  btnLoad: $('#btn-load'),
+  fileInput: $('#file-input'),
+  btnUndo: $('#btn-undo'),
+  btnReset: $('#btn-reset'),
+  btnReport: $('#btn-report'),
+  paramLensWidth: $('#param-lens-width'),
+  paramBridgeWidth: $('#param-bridge-width'),
+  paramLensHeight: $('#param-lens-height'),
+  paramExternalPD: $('#param-external-pd'),
+  stepList: $('#step-list'),
+  reportOverlay: $('#report-overlay'),
+  reportClose: $('#report-close'),
+  reportSave: $('#report-save'),
+  toastContainer: $('#toast-container'),
+};
+
+// ============================================================================
+//  IV. 工具函数
+// ============================================================================
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+/** 显示 Toast 通知 */
+function toast(msg, type) {
+  type = type || 'info';
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  dom.toastContainer.appendChild(el);
+  setTimeout(function() {
+    el.style.opacity = '0';
+    el.style.transition = 'opacity 0.3s';
+    setTimeout(function() { el.remove(); }, 300);
+  }, 2500);
+}
+
+/** 获取已放置的标注点数量 */
+function countPlaced() {
+  return Object.values(appState.landmarks).filter(function(lm) { return lm.placed; }).length;
+}
+
+/** 检查所有10个标注点是否都放置完毕 */
+function allPlaced() {
+  return countPlaced() >= 10;
+}
+
+/** 检查镜架参数是否完整 */
+function frameParamsComplete() {
+  var p = appState.frameParams;
+  return p.lensWidth !== null && p.lensWidth > 0 &&
+         p.bridgeWidth !== null && p.bridgeWidth > 0 &&
+         p.lensHeight !== null && p.lensHeight > 0;
+}
+
+// ============================================================================
+//  V. 坐标转换
+// ============================================================================
+
+/** 屏幕坐标 → 照片坐标 */
+function screenToPhoto(screenX, screenY) {
+  return {
+    x: screenX / appState.scale + appState.offsetX,
+    y: screenY / appState.scale + appState.offsetY,
+  };
+}
+
+/** 照片坐标 → 屏幕坐标 */
+function photoToScreen(photoX, photoY) {
+  return {
+    x: (photoX - appState.offsetX) * appState.scale,
+    y: (photoY - appState.offsetY) * appState.scale,
+  };
+}
+
+/** 获取 Canvas 在页面中的位置 */
+function getCanvasRect() {
+  return dom.canvas.getBoundingClientRect();
+}
+
+/** 从鼠标事件获取相对于 Canvas 的屏幕坐标 */
+function eventToCanvas(e) {
+  var rect = getCanvasRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+
+// ============================================================================
+//  VI. 图片加载
+// ============================================================================
+
+function loadImageFile(file) {
+  if (!file || !file.type.match(/image\//)) {
+    toast('请选择有效的图片文件', 'error');
+    return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    var img = new Image();
+    img.onload = function() {
+      // 检查分辨率
+      if (img.width < 800) {
+        toast('照片分辨率较低（' + img.width + 'px宽），可能影响标注精度', 'warn');
+      }
+      appState.image = img;
+      appState.imageLoaded = true;
+      appState.photoWidth = img.width;
+      appState.photoHeight = img.height;
+      resetAll();
+      fitImageToCanvas();
+      redraw();
+      updatePanel();
+      updateStatusBar();
+      dom.hint.classList.remove('hidden');
+      showStepHint();
+      if (dom.hintTimer) { clearTimeout(dom.hintTimer); dom.hintTimer = null; }
+      toast('照片加载成功 ' + img.width + '×' + img.height, 'info');
+    };
+    img.onerror = function() {
+      toast('图片加载失败，请检查文件格式（支持 JPG/PNG/WebP/BMP）', 'error');
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+/** 使照片适配画布显示（初始居中，宽度占85%） */
+function fitImageToCanvas() {
+  var rect = dom.container.getBoundingClientRect();
+  var cw = rect.width;
+  var ch = rect.height;
+  if (cw === 0 || ch === 0) { resizeCanvas(); rect = dom.container.getBoundingClientRect(); cw = rect.width; ch = rect.height; }
+  appState.scale = (cw * 0.85) / appState.photoWidth;
+  appState.scale = clamp(appState.scale, 0.1, 5);
+  var visibleW = cw / appState.scale;
+  var visibleH = ch / appState.scale;
+  appState.offsetX = (appState.photoWidth - visibleW) / 2;
+  appState.offsetY = (appState.photoHeight - visibleH) / 2;
+}
+
+// ============================================================================
+//  VII. Canvas 尺寸管理
+// ============================================================================
+
+function resizeCanvas() {
+  var rect = dom.container.getBoundingClientRect();
+  var dpr = window.devicePixelRatio || 1;
+  var w = rect.width;
+  var h = rect.height;
+  dom.canvas.width = w * dpr;
+  dom.canvas.height = h * dpr;
+  dom.canvas.style.width = w + 'px';
+  dom.canvas.style.height = h + 'px';
+}
+
+// ============================================================================
+//  VIII. Canvas 渲染引擎
+// ============================================================================
+
+function getDPR() { return window.devicePixelRatio || 1; }
+
+function redraw() {
+  if (!dom.ctx) return;
+  var ctx = dom.ctx;
+  var w = dom.canvas.width;
+  var h = dom.canvas.height;
+  var dpr = getDPR();
+
+  ctx.clearRect(0, 0, w, h);
+
+  if (!appState.imageLoaded) {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#707088';
+    ctx.font = '16px "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('请点击上方"加载照片"按钮或拖拽图片到此处', w / 2, h / 2);
+    return;
+  }
+
+  // 设置变换矩阵：照片坐标 → 屏幕坐标（含 DPR 适配）
+  ctx.save();
+  ctx.setTransform(
+    appState.scale * dpr, 0,
+    0, appState.scale * dpr,
+    -appState.offsetX * appState.scale * dpr,
+    -appState.offsetY * appState.scale * dpr
+  );
+
+  drawPhoto(ctx);
+  drawSymmetricReferenceLines(ctx);
+  drawEyeLevelLine(ctx);
+  drawFrameCenterLine(ctx);
+  drawExtendedLines(ctx);
+  drawFrameBoxes(ctx);
+  drawPupilIcons(ctx);
+  drawCurrentCrosshair(ctx);
+
+  ctx.restore();
+}
+
+/** Layer 1: 原始照片 */
+function drawPhoto(ctx) {
+  ctx.drawImage(appState.image, 0, 0, appState.photoWidth, appState.photoHeight);
+}
+
+/** Layer 2: 已标注对称点参考线 */
+function drawSymmetricReferenceLines(ctx) {
+  if (appState.currentStepIndex >= LANDMARK_DEFINITIONS.length) return;
+  var currentDef = LANDMARK_DEFINITIONS[appState.currentStepIndex];
+  var symId = SYMMETRY_MAP[currentDef.id];
+  if (!symId) return;
+  var sym = appState.landmarks[symId];
+  if (!sym || !sym.placed) return;
+
+  ctx.save();
+  ctx.strokeStyle = COLORS.REFERENCE_LINE;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, sym.y);
+  ctx.lineTo(appState.photoWidth, sym.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Layer 3: 双眼瞳孔水平线 */
+function drawEyeLevelLine(ctx) {
+  var rp = appState.landmarks.right_pupil;
+  var lp = appState.landmarks.left_pupil;
+  if (!rp || !lp || !rp.placed || !lp.placed) return;
+
+  ctx.save();
+  ctx.strokeStyle = COLORS.EYE_LEVEL;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.moveTo(rp.x, rp.y);
+  ctx.lineTo(lp.x, lp.y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** 镜架中心垂直虚线 */
+function drawFrameCenterLine(ctx) {
+  var ri = appState.landmarks.right_frame_inner;
+  var li = appState.landmarks.left_frame_inner;
+  if (!ri || !li || !ri.placed || !li.placed) return;
+
+  var frameCenterX = (ri.x + li.x) / 2;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  ctx.moveTo(frameCenterX, 0);
+  ctx.lineTo(frameCenterX, appState.photoHeight);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** 鼠标靠近已标注点时显示延长虚线 */
+function drawExtendedLines(ctx) {
+  if (!appState.mouseOnCanvas) return;
+
+  // 在照片坐标空间中查找最近的已放置标注点
+  var mx = appState.mousePhotoX;
+  var my = appState.mousePhotoY;
+  var threshold = 30 / appState.scale; // 30px 屏幕距离 → 照片距离
+  var nearest = null;
+  var minDist = threshold;
+
+  var ids = Object.keys(appState.landmarks);
+  for (var i = 0; i < ids.length; i++) {
+    var lm = appState.landmarks[ids[i]];
+    if (!lm.placed) continue;
+    var dx = lm.x - mx;
+    var dy = lm.y - my;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < minDist) {
+      minDist = dist;
+      nearest = lm;
+    }
+  }
+
+  if (nearest) {
+    ctx.save();
+    ctx.strokeStyle = COLORS.EXTENDED_LINE;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(0, nearest.y);
+    ctx.lineTo(appState.photoWidth, nearest.y);
+    ctx.moveTo(nearest.x, 0);
+    ctx.lineTo(nearest.x, appState.photoHeight);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+/** Layer 4: 镜圈框线 */
+function drawFrameBoxes(ctx) {
+  ['right', 'left'].forEach(function(eye) {
+    var top = appState.landmarks[eye + '_frame_top'];
+    var bottom = appState.landmarks[eye + '_frame_bottom'];
+    var inner = appState.landmarks[eye + '_frame_inner'];
+    var outer = appState.landmarks[eye + '_frame_outer'];
+
+    var allDone = top && bottom && inner && outer &&
+                  top.placed && bottom.placed && inner.placed && outer.placed;
+    if (!allDone) return;
+
+    // 轴对齐矩形：以四点的 X/Y 范围为边界
+    var leftX = Math.min(inner.x, outer.x);
+    var rightX = Math.max(inner.x, outer.x);
+    var topY = Math.min(top.y, bottom.y);
+    var bottomY = Math.max(top.y, bottom.y);
+
+    ctx.save();
+    // 半透明填充
+    ctx.fillStyle = COLORS.FRAME_BOX_FILL;
+    ctx.fillRect(leftX, topY, rightX - leftX, bottomY - topY);
+
+    // 描边
+    ctx.strokeStyle = COLORS.FRAME_BOX_STROKE;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.strokeRect(leftX, topY, rightX - leftX, bottomY - topY);
+    ctx.restore();
+  });
+}
+
+/** Layer 5: 瞳孔图标 */
+function drawPupilIcons(ctx) {
+  ['right', 'left'].forEach(function(eye) {
+    var lm = appState.landmarks[eye + '_pupil'];
+    if (!lm || !lm.placed) return;
+
+    // 计算瞳孔图标半径
+    var outerR, innerR;
+    if (appState._cachedScaleH && appState._cachedScaleH > 0) {
+      // 使用水平比例尺换算物理尺寸到像素
+      var irisRadiusMM = PHYSICAL.IRIS_DIAMETER_MM / 2;
+      var pupilRadiusMM = PHYSICAL.PUPIL_DIAMETER_MM / 2;
+      outerR = irisRadiusMM / appState._cachedScaleH;
+      innerR = pupilRadiusMM / appState._cachedScaleH;
+    } else {
+      outerR = PHYSICAL.DEFAULT_PUPIL_RADIUS_PX;
+      innerR = PHYSICAL.DEFAULT_PUPIL_INNER_PX;
+    }
+
+    var cx = lm.x;
+    var cy = lm.y;
+
+    ctx.save();
+
+    // 外圆（虹膜）
+    ctx.strokeStyle = COLORS.PUPIL_OUTER;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 内圆（瞳孔）
+    ctx.strokeStyle = COLORS.PUPIL_INNER;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, innerR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 十字线
+    var crossLen = outerR + 5;
+    ctx.strokeStyle = COLORS.PUPIL_CROSS;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - crossLen, cy);
+    ctx.lineTo(cx + crossLen, cy);
+    ctx.moveTo(cx, cy - crossLen);
+    ctx.lineTo(cx, cy + crossLen);
+    ctx.stroke();
+
+    // 中心点
+    ctx.fillStyle = COLORS.PUPIL_CENTER;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  });
+}
+
+/** Layer 6: 当前步骤跟随十字虚线 */
+function drawCurrentCrosshair(ctx) {
+  if (!appState.mouseOnCanvas) return;
+  if (!appState.imageLoaded) return;
+  if (appState.activeDragLandmark) return; // 拖拽时隐藏跟随线
+  if (allPlaced()) return; // 全部标注完成后隐藏
+
+  var mx = appState.mousePhotoX;
+  var my = appState.mousePhotoY;
+
+  ctx.save();
+  ctx.strokeStyle = COLORS.CROSSHAIR;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, my);
+  ctx.lineTo(appState.photoWidth, my);
+  ctx.moveTo(mx, 0);
+  ctx.lineTo(mx, appState.photoHeight);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ============================================================================
+//  IX. 放大镜
+// ============================================================================
+
+function showMagnifier(photoX, photoY) {
+  appState.showMagnifier = true;
+  appState.magnifierPhotoX = photoX;
+  appState.magnifierPhotoY = photoY;
+  dom.magnifierContainer.style.display = 'block';
+  updateMagnifierPosition(photoX, photoY);
+  drawMagnifierContent(photoX, photoY);
+}
+
+function hideMagnifier() {
+  appState.showMagnifier = false;
+  dom.magnifierContainer.style.display = 'none';
+}
+
+function updateMagnifierPosition(photoX, photoY) {
+  // 将照片坐标转为页面坐标
+  var screen = photoToScreen(photoX, photoY);
+  var rect = getCanvasRect();
+  var pageX = screen.x + rect.left;
+  var pageY = screen.y + rect.top;
+
+  var size = 150;
+  var offset = 20;
+  var left = pageX - size - offset;
+  var top = pageY - size - offset;
+
+  // 边界翻转
+  if (left < 0) { left = pageX + offset; }
+  if (top < 0) { top = pageY + offset; }
+  if (left + size > window.innerWidth) { left = pageX - size - offset; }
+  if (top + size > window.innerHeight) { top = pageY - size - offset; }
+
+  dom.magnifierContainer.style.left = Math.max(0, left) + 'px';
+  dom.magnifierContainer.style.top = Math.max(0, top) + 'px';
+}
+
+function drawMagnifierContent(photoX, photoY) {
+  var magCanvas = dom.magnifierCanvas;
+  var magCtx = dom.magnifierCtx;
+  if (!magCtx || !appState.imageLoaded) return;
+
+  var magSize = 300;     // 内部分辨率
+  var magZoom = 4;       // 固定4倍放大
+  var sourceSize = magSize / magZoom; // 75 照片像素
+
+  magCtx.clearRect(0, 0, magSize, magSize);
+
+  // 绘制放大照片
+  magCtx.save();
+  magCtx.beginPath();
+  magCtx.arc(magSize / 2, magSize / 2, magSize / 2, 0, Math.PI * 2);
+  magCtx.clip();
+
+  magCtx.drawImage(
+    appState.image,
+    photoX - sourceSize / 2, photoY - sourceSize / 2,
+    sourceSize, sourceSize,
+    0, 0,
+    magSize, magSize
+  );
+
+  // 中心十字参考线
+  magCtx.strokeStyle = 'rgba(231,76,60,0.5)';
+  magCtx.lineWidth = 1;
+  magCtx.setLineDash([4, 4]);
+  magCtx.beginPath();
+  magCtx.moveTo(magSize / 2, 0);
+  magCtx.lineTo(magSize / 2, magSize);
+  magCtx.moveTo(0, magSize / 2);
+  magCtx.lineTo(magSize, magSize / 2);
+  magCtx.stroke();
+
+  magCtx.setLineDash([]);
+  magCtx.fillStyle = 'rgba(231,76,60,0.8)';
+  magCtx.beginPath();
+  magCtx.arc(magSize / 2, magSize / 2, 2, 0, Math.PI * 2);
+  magCtx.fill();
+
+  magCtx.restore();
+}
+
+// ============================================================================
+//  X. 核心算法
+// ============================================================================
+
+/** 计算双轴比例尺 */
+function calculateDualScale() {
+  if (!frameParamsComplete()) return null;
+  if (countPlaced() < 10) return null;
+
+  var lm = appState.landmarks;
+  var fp = appState.frameParams;
+
+  // 水平方向
+  var rightWidthPx = Math.abs(lm.right_frame_outer.x - lm.right_frame_inner.x);
+  var leftWidthPx = Math.abs(lm.left_frame_outer.x - lm.left_frame_inner.x);
+  var bridgePx = Math.abs(lm.left_frame_inner.x - lm.right_frame_inner.x);
+  var avgWidthPx = (rightWidthPx + leftWidthPx) / 2;
+
+  var totalWidthMM = fp.lensWidth * 2 + fp.bridgeWidth;
+  var totalWidthPx = rightWidthPx + leftWidthPx + bridgePx;
+  var scaleHorizontal = totalWidthMM / totalWidthPx;
+  var scaleHorizontalSingle = fp.lensWidth / avgWidthPx;
+
+  var horizontalConsistency = Math.abs(scaleHorizontal - scaleHorizontalSingle) / scaleHorizontal;
+
+  // 垂直方向
+  var rightHeightPx = Math.abs(lm.right_frame_bottom.y - lm.right_frame_top.y);
+  var leftHeightPx = Math.abs(lm.left_frame_bottom.y - lm.left_frame_top.y);
+  var avgHeightPx = (rightHeightPx + leftHeightPx) / 2;
+
+  var scaleVertical = fp.lensHeight / avgHeightPx;
+
+  // 两轴差异率
+  var discrepancy = Math.abs(scaleHorizontal - scaleVertical) / scaleHorizontal;
+
+  // 估算前倾角
+  var estimatedTiltAngle = 0;
+  if (scaleVertical > scaleHorizontal) {
+    estimatedTiltAngle = Math.acos(scaleHorizontal / scaleVertical) * (180 / Math.PI);
+  } else {
+    estimatedTiltAngle = -Math.acos(scaleVertical / scaleHorizontal) * (180 / Math.PI);
+  }
+
+  // 偏差等级
+  var tiltWarning = null;
+  if (discrepancy > 0.08) {
+    tiltWarning = {
+      level: 'red',
+      message: '⚠ 垂直/水平比例尺偏差 ' + (discrepancy * 100).toFixed(1) +
+               '%，偏差过大。请检查镜圈边缘标注是否准确或顾客拍照姿态。',
+      estimatedTiltAngle: estimatedTiltAngle,
+    };
+  } else if (discrepancy > 0.05) {
+    tiltWarning = {
+      level: 'yellow',
+      message: '前倾角约 ' + estimatedTiltAngle.toFixed(0) + '°，偏差稍大，请注意确认标注精度。',
+      estimatedTiltAngle: estimatedTiltAngle,
+    };
+  } else if (discrepancy > 0.02) {
+    tiltWarning = {
+      level: 'info',
+      message: '前倾角约 ' + estimatedTiltAngle.toFixed(0) + '°，在正常范围内。',
+      estimatedTiltAngle: estimatedTiltAngle,
+    };
+  }
+
+  // 左右镜圈对称性
+  var widthAsym = avgWidthPx > 0 ? Math.abs(rightWidthPx - leftWidthPx) / avgWidthPx : 0;
+  var heightAsym = avgHeightPx > 0 ? Math.abs(rightHeightPx - leftHeightPx) / avgHeightPx : 0;
+
+  return {
+    scaleHorizontal: scaleHorizontal,
+    scaleVertical: scaleVertical,
+    scaleHorizontalSingle: scaleHorizontalSingle,
+    avgWidthPx: avgWidthPx,
+    avgHeightPx: avgHeightPx,
+    bridgePx: bridgePx,
+    rightWidthPx: rightWidthPx,
+    leftWidthPx: leftWidthPx,
+    rightHeightPx: rightHeightPx,
+    leftHeightPx: leftHeightPx,
+    discrepancy: discrepancy,
+    horizontalConsistency: horizontalConsistency,
+    estimatedTiltAngle: estimatedTiltAngle,
+    tiltWarning: tiltWarning,
+    widthAsym: widthAsym,
+    heightAsym: heightAsym,
+    isConsistent: discrepancy < 0.08,
+  };
+}
+
+/** 计算瞳距 */
+function calculatePD(scaleHorizontal) {
+  var rp = appState.landmarks.right_pupil;
+  var lp = appState.landmarks.left_pupil;
+  if (!rp || !lp || !rp.placed || !lp.placed) return null;
+  var dx = lp.x - rp.x;
+  var dy = lp.y - rp.y;
+  var pdPx = Math.sqrt(dx * dx + dy * dy);
+  return pdPx * scaleHorizontal;
+}
+
+/** 计算单眼瞳高 */
+function calculatePH(scaleVertical, eye) {
+  var pupil = appState.landmarks[eye + '_pupil'];
+  var frameBottom = appState.landmarks[eye + '_frame_bottom'];
+  if (!pupil || !frameBottom || !pupil.placed || !frameBottom.placed) return null;
+  var phPx = frameBottom.y - pupil.y;
+  return phPx * scaleVertical;
+}
+
+/** 计算单眼瞳距 RPD/LPD（使用水平比例尺） */
+function calculateMonoPD(scaleHorizontal) {
+  var ri = appState.landmarks.right_frame_inner;
+  var li = appState.landmarks.left_frame_inner;
+  var rp = appState.landmarks.right_pupil;
+  var lp = appState.landmarks.left_pupil;
+  if (!ri || !li || !rp || !lp || !ri.placed || !li.placed || !rp.placed || !lp.placed) return null;
+
+  var frameCenterX = (ri.x + li.x) / 2;
+  var rightMonoPx = frameCenterX - rp.x;
+  var leftMonoPx = lp.x - frameCenterX;
+  var rightMonoPD = rightMonoPx * scaleHorizontal;
+  var leftMonoPD = leftMonoPx * scaleHorizontal;
+  var totalPD = rightMonoPD + leftMonoPD;
+  var asymmetry = Math.abs(rightMonoPD - leftMonoPD);
+
+  var warning = null;
+  if (asymmetry > 2.0) {
+    warning = '⚠ 左右单眼瞳距差 ' + asymmetry.toFixed(1) + 'mm（>2mm），请确认标注准确性，如确认则配镜务必区分左右眼';
+  } else if (asymmetry > 1.0) {
+    warning = 'ℹ 左右单眼瞳距差 ' + asymmetry.toFixed(1) + 'mm，建议加工时区分左右眼';
+  }
+
+  // 内部一致性：单眼之和 vs 双眼距离公式
+  var pdDirect = calculatePD(scaleHorizontal);
+  var consistency = (pdDirect !== null) ? Math.abs(totalPD - pdDirect) : null;
+
+  return { rightMonoPD: rightMonoPD, leftMonoPD: leftMonoPD, totalPD: totalPD, asymmetry: asymmetry, warning: warning, consistency: consistency };
+}
+
+/** 交叉验证 */
+function crossValidate(manualPD, externalPD) {
+  if (externalPD === null || externalPD === undefined || isNaN(externalPD)) {
+    return { deviation: null, level: 'none', message: '未输入外院瞳距，无法交叉验证' };
+  }
+  var deviation = Math.abs(manualPD - externalPD);
+  var level, message;
+  if (deviation < 0.5) {
+    level = 'green';
+    message = '🟢 测量一致性优秀（偏差 < 0.5mm）';
+  } else if (deviation < 1.0) {
+    level = 'yellow';
+    message = '🟡 在可接受范围内（偏差 0.5-1.0mm）';
+  } else {
+    level = 'red';
+    message = '🔴 偏差较大（> 1.0mm），请检查标注位置、拍照姿态或外院瞳距类型（远用/近用）';
+  }
+  return { deviation: deviation, level: level, message: message };
+}
+
+/** 双眼水平度检测 */
+function checkEyeLevel() {
+  var rp = appState.landmarks.right_pupil;
+  var lp = appState.landmarks.left_pupil;
+  if (!rp || !lp || !rp.placed || !lp.placed) return null;
+  var dy = lp.y - rp.y;
+  var dx = lp.x - rp.x;
+  var angleDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+  var absAngle = Math.abs(angleDeg);
+  return {
+    angleDeg: absAngle,
+    isLevel: absAngle < 2.0,
+    message: absAngle < 1.0 ? '✅ 双眼水平' :
+             absAngle < 3.0 ? '⚠️ 轻微倾斜' : '🔴 明显倾斜，请确认顾客拍照姿态',
+  };
+}
+
+// ============================================================================
+//  XI. UI 更新
+// ============================================================================
+
+function updatePanel() {
+  updateStepList();
+  updateScaleDisplay();
+  updateResults();
+  updateCrossValidation();
+  updateButtons();
+}
+
+function updateStepList() {
+  var html = '';
+  for (var i = 0; i < LANDMARK_DEFINITIONS.length; i++) {
+    var def = LANDMARK_DEFINITIONS[i];
+    var lm = appState.landmarks[def.id];
+    var cls = '';
+    var icon = '○';
+    var label = def.label;
+
+    if (i === appState.currentStepIndex && !(lm && lm.placed)) {
+      cls = 'current';
+      icon = '►';
+    } else if (lm && lm.placed) {
+      cls = 'completed';
+      icon = '✅';
+      label += ' (' + lm.x.toFixed(0) + ',' + lm.y.toFixed(0) + ')';
+    } else {
+      cls = 'pending';
+    }
+
+    html += '<div class="step-item ' + cls + '">' +
+            '<span class="step-icon">' + icon + '</span>' +
+            '<span class="step-label">' + label + '</span>' +
+            '</div>';
+  }
+  dom.stepList.innerHTML = html;
+
+  document.getElementById('status-progress').textContent = countPlaced() + '/10';
+}
+
+function updateScaleDisplay() {
+  var scale = calculateDualScale();
+  if (scale) {
+    document.getElementById('val-scale-h').textContent = scale.scaleHorizontal.toFixed(4) + ' mm/px';
+    document.getElementById('val-scale-v').textContent = scale.scaleVertical.toFixed(4) + ' mm/px';
+    var discText = (scale.discrepancy * 100).toFixed(1) + '%';
+    var discEl = document.getElementById('val-disc');
+    discEl.textContent = discText;
+    if (scale.discrepancy > 0.08) {
+      discEl.style.color = 'var(--danger)';
+    } else if (scale.discrepancy > 0.05) {
+      discEl.style.color = 'var(--warning)';
+    } else if (scale.discrepancy > 0.02) {
+      discEl.style.color = 'var(--info)';
+    } else {
+      discEl.style.color = 'var(--success)';
+    }
+
+    document.getElementById('val-tilt').textContent = scale.estimatedTiltAngle.toFixed(1) + '°';
+
+    var tw = document.getElementById('tilt-warning');
+    if (scale.tiltWarning) {
+      tw.style.display = 'block';
+      tw.className = 'warning-row warning-' + scale.tiltWarning.level;
+      tw.textContent = scale.tiltWarning.message;
+    } else {
+      tw.style.display = 'none';
+    }
+
+    // 左右对称警告
+    if (scale.widthAsym > 0.08) {
+      toast('⚠ 左右镜圈标注宽度差异较大（' + (scale.widthAsym * 100).toFixed(0) + '%），请检查标注', 'warn');
+    }
+    if (scale.heightAsym > 0.08) {
+      toast('⚠ 左右镜圈标注高度差异较大（' + (scale.heightAsym * 100).toFixed(0) + '%），请检查标注', 'warn');
+    }
+
+    // 水平一致性警告
+    if (scale.horizontalConsistency > 0.05) {
+      toast('⚠ 镜圈宽度与中梁宽度比例关系不一致，请检查标注', 'warn');
+    }
+
+    // 缓存比例尺供瞳孔图标使用
+    appState._cachedScaleH = scale.scaleHorizontal;
+    appState._cachedScaleV = scale.scaleVertical;
+  } else {
+    document.getElementById('val-scale-h').textContent = '--';
+    document.getElementById('val-scale-v').textContent = '--';
+    document.getElementById('val-disc').textContent = '--';
+    document.getElementById('val-disc').style.color = 'var(--text-dim)';
+    document.getElementById('val-tilt').textContent = '--';
+    document.getElementById('tilt-warning').style.display = 'none';
+    appState._cachedScaleH = null;
+    appState._cachedScaleV = null;
+  }
+}
+
+function updateResults() {
+  var scale = calculateDualScale();
+
+  var pdEl = document.getElementById('val-pd');
+  var rpdEl = document.getElementById('val-rpd');
+  var lpdEl = document.getElementById('val-lpd');
+  var asymEl = document.getElementById('val-asym');
+  var monoWarnEl = document.getElementById('mono-warning');
+  var phREl = document.getElementById('val-ph-r');
+  var phLEl = document.getElementById('val-ph-l');
+  var levelEl = document.getElementById('val-level');
+
+  if (scale && scale.scaleHorizontal > 0) {
+    var pd = calculatePD(scale.scaleHorizontal);
+    if (pd !== null) {
+      pdEl.textContent = pd.toFixed(1) + ' mm';
+      pdEl.style.color = 'var(--text-bright)';
+    } else {
+      pdEl.textContent = '--';
+      pdEl.style.color = 'var(--text-dim)';
+    }
+  } else {
+    pdEl.textContent = '--';
+    pdEl.style.color = 'var(--text-dim)';
+  }
+
+  // 单眼瞳距
+  if (scale && scale.scaleHorizontal > 0) {
+    var mono = calculateMonoPD(scale.scaleHorizontal);
+    if (mono) {
+      rpdEl.textContent = mono.rightMonoPD.toFixed(1) + ' mm';
+      lpdEl.textContent = mono.leftMonoPD.toFixed(1) + ' mm';
+      asymEl.textContent = mono.asymmetry.toFixed(1) + ' mm';
+      rpdEl.style.color = 'var(--text-bright)';
+      lpdEl.style.color = 'var(--text-bright)';
+      if (mono.asymmetry > 2.0) {
+        asymEl.style.color = 'var(--danger)';
+      } else if (mono.asymmetry > 1.0) {
+        asymEl.style.color = 'var(--warning)';
+      } else {
+        asymEl.style.color = 'var(--success)';
+      }
+      if (mono.warning) {
+        monoWarnEl.style.display = 'block';
+        monoWarnEl.className = 'warning-row ' + (mono.asymmetry > 2.0 ? 'warning-red' : 'warning-yellow');
+        var warnText = mono.warning;
+        if (mono.consistency !== null && mono.consistency > 0.5) {
+          warnText += ' | 内部一致性差: ' + mono.consistency.toFixed(2) + 'mm';
+        }
+        monoWarnEl.textContent = warnText;
+      } else {
+        monoWarnEl.style.display = 'none';
+      }
+    } else {
+      rpdEl.textContent = '--'; rpdEl.style.color = 'var(--text-dim)';
+      lpdEl.textContent = '--'; lpdEl.style.color = 'var(--text-dim)';
+      asymEl.textContent = '--'; asymEl.style.color = 'var(--text-dim)';
+      monoWarnEl.style.display = 'none';
+    }
+  } else {
+    rpdEl.textContent = '--'; rpdEl.style.color = 'var(--text-dim)';
+    lpdEl.textContent = '--'; lpdEl.style.color = 'var(--text-dim)';
+    asymEl.textContent = '--'; asymEl.style.color = 'var(--text-dim)';
+    monoWarnEl.style.display = 'none';
+  }
+
+  if (scale && scale.scaleVertical > 0) {
+    var phR = calculatePH(scale.scaleVertical, 'right');
+    var phL = calculatePH(scale.scaleVertical, 'left');
+    if (phR !== null) {
+      phREl.textContent = phR.toFixed(1) + ' mm';
+      phREl.style.color = 'var(--text-bright)';
+    } else {
+      phREl.textContent = '--';
+      phREl.style.color = 'var(--text-dim)';
+    }
+    if (phL !== null) {
+      phLEl.textContent = phL.toFixed(1) + ' mm';
+      phLEl.style.color = 'var(--text-bright)';
+    } else {
+      phLEl.textContent = '--';
+      phLEl.style.color = 'var(--text-dim)';
+    }
+  } else {
+    phREl.textContent = '--';
+    phREl.style.color = 'var(--text-dim)';
+    phLEl.textContent = '--';
+    phLEl.style.color = 'var(--text-dim)';
+  }
+
+  // 双眼水平检测
+  var level = checkEyeLevel();
+  if (level) {
+    levelEl.textContent = level.angleDeg.toFixed(1) + '° ' + level.message;
+    if (level.isLevel) {
+      levelEl.style.color = 'var(--success)';
+    } else {
+      levelEl.style.color = 'var(--warning)';
+    }
+  } else {
+    levelEl.textContent = '--';
+    levelEl.style.color = 'var(--text-dim)';
+  }
+}
+
+function updateCrossValidation() {
+  var dv = document.getElementById('cross-validation-result');
+  var scale = calculateDualScale();
+  var extPD = appState.externalPD;
+
+  if (scale && scale.scaleHorizontal > 0 && extPD !== null) {
+    var pd = calculatePD(scale.scaleHorizontal);
+    if (pd !== null) {
+      var cv = crossValidate(pd, extPD);
+      dv.style.display = 'block';
+      dv.className = 'warning-row warning-' + cv.level;
+      dv.textContent = cv.message + ' (偏差: ' + (cv.deviation !== null ? cv.deviation.toFixed(2) + 'mm' : '--') + ')';
+      return;
+    }
+  }
+  dv.style.display = 'none';
+}
+
+function updateButtons() {
+  dom.btnUndo.disabled = (countPlaced() === 0);
+  dom.btnReport.disabled = !allPlaced() || !frameParamsComplete();
+}
+
+function updateStatusBar() {
+  var coordsEl = document.getElementById('status-coords');
+  var zoomEl = document.getElementById('status-zoom');
+  var photoSizeEl = document.getElementById('status-photo-size');
+
+  if (appState.imageLoaded) {
+    coordsEl.textContent = '(' + appState.mousePhotoX.toFixed(0) + ', ' + appState.mousePhotoY.toFixed(0) + ')';
+    zoomEl.textContent = (appState.scale * 100).toFixed(0) + '%';
+    photoSizeEl.textContent = appState.photoWidth + '×' + appState.photoHeight;
+  } else {
+    coordsEl.textContent = '(0, 0)';
+    zoomEl.textContent = '100%';
+    photoSizeEl.textContent = '未加载';
+  }
+  document.getElementById('status-progress').textContent = countPlaced() + '/10';
+}
+
+function showStepHint() {
+  if (appState.currentStepIndex >= LANDMARK_DEFINITIONS.length) {
+    dom.hint.textContent = '全部标注完成！可拖拽微调标注点';
+    dom.hint.classList.remove('hidden');
+    return;
+  }
+  var def = LANDMARK_DEFINITIONS[appState.currentStepIndex];
+  var content = '步骤 ' + (appState.currentStepIndex + 1) + '/10：请标注' + def.label;
+  if (def.type === 'pupil') {
+    content += ' — 点击瞳孔中心';
+  } else {
+    var posHint = def.position === 'top' ? '点击镜圈内缘最上端' :
+                  def.position === 'bottom' ? '点击镜圈内缘最下端' :
+                  def.position === 'inner' ? '点击镜圈内缘靠鼻侧' :
+                  '点击镜圈内缘靠耳侧';
+    content += ' — ' + posHint;
+  }
+  dom.hint.textContent = content;
+  dom.hint.classList.remove('hidden');
+}
+
+// ============================================================================
+//  XII. 撤销系统
+// ============================================================================
+
+function pushUndoState() {
+  // 推入当前状态快照
+  var snapshot = {
+    currentStepIndex: appState.currentStepIndex,
+    landmarks: {},
+  };
+  var ids = Object.keys(appState.landmarks);
+  for (var i = 0; i < ids.length; i++) {
+    var lm = appState.landmarks[ids[i]];
+    snapshot.landmarks[ids[i]] = { x: lm.x, y: lm.y, placed: lm.placed };
+  }
+  appState.undoStack.push(snapshot);
+  // 限制撤销栈大小
+  if (appState.undoStack.length > 50) {
+    appState.undoStack.shift();
+  }
+}
+
+function undo() {
+  if (appState.undoStack.length === 0) return;
+
+  var snapshot = appState.undoStack.pop();
+  appState.currentStepIndex = snapshot.currentStepIndex;
+  var ids = Object.keys(snapshot.landmarks);
+  for (var i = 0; i < ids.length; i++) {
+    var id = ids[i];
+    appState.landmarks[id].x = snapshot.landmarks[id].x;
+    appState.landmarks[id].y = snapshot.landmarks[id].y;
+    appState.landmarks[id].placed = snapshot.landmarks[id].placed;
+  }
+
+  redraw();
+  updatePanel();
+  updateStatusBar();
+  showStepHint();
+}
+
+// ============================================================================
+//  XIII. 标注点放置与拖拽
+// ============================================================================
+
+/** 在当前步骤放置标注点 */
+function placeLandmark(photoX, photoY) {
+  if (!appState.imageLoaded) {
+    toast('请先加载照片', 'warn');
+    return;
+  }
+  if (!frameParamsComplete()) {
+    toast('请先输入完整的镜架参数（镜圈宽度、中梁宽度、镜片高度）', 'warn');
+    return;
+  }
+
+  if (appState.currentStepIndex >= LANDMARK_DEFINITIONS.length) return;
+
+  pushUndoState();
+
+  var def = LANDMARK_DEFINITIONS[appState.currentStepIndex];
+  var lm = appState.landmarks[def.id];
+
+  lm.x = photoX;
+  lm.y = photoY;
+  lm.placed = true;
+
+  // 前进到下一步
+  var placed = countPlaced();
+  if (placed >= 10) {
+    appState.currentStepIndex = 10; // 超出范围，表示完成
+  } else {
+    // 找到下一个未放置的步骤
+    var nextIndex = 0;
+    for (var i = 0; i < LANDMARK_DEFINITIONS.length; i++) {
+      var checkLm = appState.landmarks[LANDMARK_DEFINITIONS[i].id];
+      if (!checkLm.placed) {
+        nextIndex = i;
+        break;
+      }
+      // 如果所有都已放置（包括刚刚放置的），停在最后
+      if (i === LANDMARK_DEFINITIONS.length - 1) {
+        nextIndex = LANDMARK_DEFINITIONS.length;
+      }
+    }
+    appState.currentStepIndex = nextIndex;
+  }
+
+  redraw();
+  updatePanel();
+  updateStatusBar();
+  showStepHint();
+
+  if (allPlaced()) {
+    toast('全部10个标注点已完成！可拖拽微调，也可生成报告', 'info');
+  }
+}
+
+/** 查找鼠标附近的已标注点（返回 ID，照片坐标空间） */
+function findNearbyLandmark(photoX, photoY) {
+  var threshold = 30 / appState.scale;
+  var bestId = null;
+  var bestDist = threshold;
+  var ids = Object.keys(appState.landmarks);
+  for (var i = 0; i < ids.length; i++) {
+    var lm = appState.landmarks[ids[i]];
+    if (!lm.placed) continue;
+    var dx = lm.x - photoX;
+    var dy = lm.y - photoY;
+    var dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestId = ids[i];
+    }
+  }
+  return bestId;
+}
+
+// ============================================================================
+//  XIV. 鼠标事件处理
+// ============================================================================
+
+function onCanvasMouseDown(e) {
+  if (!appState.imageLoaded) return;
+
+  // 中键拖拽平移
+  if (e.button === 1) {
+    e.preventDefault();
+    appState.isPanning = true;
+    appState.panStartScreenX = e.clientX;
+    appState.panStartScreenY = e.clientY;
+    appState.panStartOffsetX = appState.offsetX;
+    appState.panStartOffsetY = appState.offsetY;
+    dom.canvas.style.cursor = 'grabbing';
+    return;
+  }
+
+  // 左键：空格+左键 平移；否则标注/拖拽
+  if (e.button === 0) {
+    if (appState.spacePressed) {
+      appState.isPanning = true;
+      appState.panStartScreenX = e.clientX;
+      appState.panStartScreenY = e.clientY;
+      appState.panStartOffsetX = appState.offsetX;
+      appState.panStartOffsetY = appState.offsetY;
+      dom.canvas.style.cursor = 'grabbing';
+      return;
+    }
+
+    var canvasPos = eventToCanvas(e);
+    var photo = screenToPhoto(canvasPos.x, canvasPos.y);
+
+    // 检查是否点击了已标注点（拖拽）
+    var nearbyId = findNearbyLandmark(photo.x, photo.y);
+    if (nearbyId) {
+      pushUndoState();
+      appState.activeDragLandmark = nearbyId;
+      dom.canvas.style.cursor = 'grabbing';
+      hideMagnifier();
+      return;
+    }
+
+    // 否则：放置新标注点
+    if (appState.currentStepIndex < LANDMARK_DEFINITIONS.length) {
+      placeLandmark(photo.x, photo.y);
+    }
+  }
+}
+
+function onCanvasMouseMove(e) {
+  if (!appState.imageLoaded) return;
+
+  var canvasPos = eventToCanvas(e);
+  var photo = screenToPhoto(canvasPos.x, canvasPos.y);
+
+  appState.mousePhotoX = photo.x;
+  appState.mousePhotoY = photo.y;
+  appState.mouseScreenX = canvasPos.x;
+  appState.mouseScreenY = canvasPos.y;
+
+  // 平移
+  if (appState.isPanning) {
+    var dx = e.clientX - appState.panStartScreenX;
+    var dy = e.clientY - appState.panStartScreenY;
+    appState.offsetX = appState.panStartOffsetX - dx / appState.scale;
+    appState.offsetY = appState.panStartOffsetY - dy / appState.scale;
+    // 弹性边界：允许10%越界
+    var rect = dom.container.getBoundingClientRect();
+    var visibleW = rect.width / appState.scale;
+    var visibleH = rect.height / appState.scale;
+    appState.offsetX = clamp(appState.offsetX, -appState.photoWidth * 0.1, appState.photoWidth * 1.1 - visibleW);
+    appState.offsetY = clamp(appState.offsetY, -appState.photoHeight * 0.1, appState.photoHeight * 1.1 - visibleH);
+    redraw();
+    updateStatusBar();
+    return;
+  }
+
+  // 拖拽标注点
+  if (appState.activeDragLandmark) {
+    var lm = appState.landmarks[appState.activeDragLandmark];
+    lm.x = photo.x;
+    lm.y = photo.y;
+    redraw();
+    updatePanel();
+    updateStatusBar();
+
+    // 拖拽时始终显示放大镜
+    if (appState.magnifierTimer) { clearTimeout(appState.magnifierTimer); appState.magnifierTimer = null; }
+    showMagnifier(photo.x, photo.y);
+    return;
+  }
+
+  // 更新鼠标样式
+  var nearbyId = findNearbyLandmark(photo.x, photo.y);
+  if (nearbyId) {
+    dom.canvas.style.cursor = 'grab';
+    // 悬停放大镜延迟
+    if (!appState.showMagnifier && !appState.magnifierTimer) {
+      var px = photo.x;
+      var py = photo.y;
+      appState.magnifierTimer = setTimeout(function() {
+        if (appState.mousePhotoX === px && appState.mousePhotoY === py) {
+          showMagnifier(px, py);
+        }
+        appState.magnifierTimer = null;
+      }, 300);
+    }
+    if (appState.showMagnifier) {
+      updateMagnifierPosition(photo.x, photo.y);
+      drawMagnifierContent(photo.x, photo.y);
+    }
+  } else {
+    dom.canvas.style.cursor = 'crosshair';
+    hideMagnifier();
+    if (appState.magnifierTimer) {
+      clearTimeout(appState.magnifierTimer);
+      appState.magnifierTimer = null;
+    }
+  }
+
+  redraw();
+  updateStatusBar();
+}
+
+function onCanvasMouseUp(e) {
+  appState.isPanning = false;
+  appState.activeDragLandmark = null;
+  dom.canvas.style.cursor = 'crosshair';
+}
+
+function onCanvasWheel(e) {
+  if (!appState.imageLoaded) return;
+  e.preventDefault();
+
+  var canvasPos = eventToCanvas(e);
+
+  // 以鼠标位置为缩放中心
+  var oldScale = appState.scale;
+  var zoomFactor = e.deltaY < 0 ? 1.09 : 1 / 1.09;
+  var newScale = clamp(oldScale * zoomFactor, 0.1, 5);
+
+  // 调整偏移使鼠标位置对应的照片坐标不变
+  var photoX = canvasPos.x / oldScale + appState.offsetX;
+  var photoY = canvasPos.y / oldScale + appState.offsetY;
+  appState.scale = newScale;
+  appState.offsetX = photoX - canvasPos.x / newScale;
+  appState.offsetY = photoY - canvasPos.y / newScale;
+
+  redraw();
+  updateStatusBar();
+}
+
+function onCanvasContextMenu(e) {
+  e.preventDefault();
+}
+
+function onCanvasMouseLeave() {
+  appState.mouseOnCanvas = false;
+  hideMagnifier();
+  if (appState.magnifierTimer) { clearTimeout(appState.magnifierTimer); appState.magnifierTimer = null; }
+  appState.isPanning = false;
+  appState.activeDragLandmark = null;
+  dom.canvas.style.cursor = 'default';
+  // 2秒后隐藏提示
+  if (dom.hintTimer) clearTimeout(dom.hintTimer);
+  dom.hintTimer = setTimeout(function() {
+    dom.hint.classList.add('hidden');
+  }, 2000);
+  redraw();
+}
+
+function onCanvasMouseEnter() {
+  appState.mouseOnCanvas = true;
+  dom.hint.classList.remove('hidden');
+  if (dom.hintTimer) { clearTimeout(dom.hintTimer); dom.hintTimer = null; }
+  dom.canvas.style.cursor = 'crosshair';
+}
+
+// ============================================================================
+//  XV. 键盘事件
+// ============================================================================
+
+function onKeyDown(e) {
+  if (e.code === 'Space') {
+    e.preventDefault();
+    appState.spacePressed = true;
+    dom.canvas.style.cursor = 'grab';
+  }
+  // Ctrl+Z 撤销
+  if (e.ctrlKey && e.code === 'KeyZ') {
+    e.preventDefault();
+    undo();
+  }
+}
+
+function onKeyUp(e) {
+  if (e.code === 'Space') {
+    appState.spacePressed = false;
+    if (!appState.isPanning) {
+      dom.canvas.style.cursor = 'crosshair';
+    }
+  }
+}
+
+// ============================================================================
+//  XVI. 拖拽文件加载
+// ============================================================================
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer) { e.dataTransfer.dropEffect = 'copy'; }
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+    loadImageFile(e.dataTransfer.files[0]);
+  }
+}
+
+// ============================================================================
+//  XVII. 参数输入监听
+// ============================================================================
+
+function readFrameParams() {
+  var lw = parseFloat(dom.paramLensWidth.value);
+  var bw = parseFloat(dom.paramBridgeWidth.value);
+  var lh = parseFloat(dom.paramLensHeight.value);
+
+  appState.frameParams.lensWidth = (!isNaN(lw) && lw > 0) ? lw : null;
+  appState.frameParams.bridgeWidth = (!isNaN(bw) && bw > 0) ? bw : null;
+  appState.frameParams.lensHeight = (!isNaN(lh) && lh > 0) ? lh : null;
+
+  readExternalPD();
+  redraw();
+  updatePanel();
+  updateStatusBar();
+}
+
+function readExternalPD() {
+  var ext = parseFloat(dom.paramExternalPD.value);
+  appState.externalPD = (!isNaN(ext) && ext > 0) ? ext : null;
+}
+
+// ============================================================================
+//  XVIII. 重置
+// ============================================================================
+
+function resetAll() {
+  appState.currentStepIndex = 0;
+  appState.landmarks = {};
+  appState.undoStack = [];
+  appState.activeDragLandmark = null;
+  appState.isPanning = false;
+  appState._cachedScaleH = null;
+  appState._cachedScaleV = null;
+
+  // 初始化所有标注点
+  for (var i = 0; i < LANDMARK_DEFINITIONS.length; i++) {
+    var def = LANDMARK_DEFINITIONS[i];
+    appState.landmarks[def.id] = { x: 0, y: 0, placed: false };
+  }
+}
+
+// ============================================================================
+//  XIX. 报告生成
+// ============================================================================
+
+function generateReport() {
+  if (!allPlaced()) {
+    toast('请完成全部标注（当前已完成 ' + countPlaced() + '/10）', 'warn');
+    return;
+  }
+  if (!frameParamsComplete()) {
+    toast('请先输入完整的镜架参数', 'warn');
+    return;
+  }
+
+  var scale = calculateDualScale();
+  if (!scale) return;
+
+  var pd = calculatePD(scale.scaleHorizontal);
+  var mono = calculateMonoPD(scale.scaleHorizontal);
+  var phR = calculatePH(scale.scaleVertical, 'right');
+  var phL = calculatePH(scale.scaleVertical, 'left');
+  var level = checkEyeLevel();
+  var cv = crossValidate(pd, appState.externalPD);
+
+  // 绘制标注分析图到 canvas — 裁剪到眼部区域
+  var reportCanvasWrap = document.getElementById('report-canvas-wrap');
+  reportCanvasWrap.innerHTML = '';
+
+  // 以所有已标注点为基准计算眼部包围盒
+  var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  var ids = Object.keys(appState.landmarks);
+  for (var i = 0; i < ids.length; i++) {
+    var lm = appState.landmarks[ids[i]];
+    if (!lm.placed) continue;
+    if (lm.x < minX) minX = lm.x;
+    if (lm.x > maxX) maxX = lm.x;
+    if (lm.y < minY) minY = lm.y;
+    if (lm.y > maxY) maxY = lm.y;
+  }
+  // 留白边距：水平15%，垂直30%（上方给PD箭头，下方给瞳高标注）
+  var padH = (maxX - minX) * 0.15;
+  var padV = (maxY - minY) * 0.30;
+  var cropX = Math.max(0, minX - padH);
+  var cropY = Math.max(0, minY - padV);
+  var cropW = Math.min(appState.photoWidth  - cropX, (maxX + padH) - cropX);
+  var cropH = Math.min(appState.photoHeight - cropY, (maxY + padV) - cropY);
+
+  var reportImgCanvas = document.createElement('canvas');
+  var maxW = 620;
+  var s = maxW / cropW;
+  var cw = Math.round(cropW * s);
+  var ch = Math.round(cropH * s);
+  reportImgCanvas.width = cw;
+  reportImgCanvas.height = ch;
+  var ictx = reportImgCanvas.getContext('2d');
+  ictx.drawImage(appState.image, cropX, cropY, cropW, cropH, 0, 0, cw, ch);
+  drawAnnotatedImage(ictx, pd, mono, phR, phL, s, cw, ch, cropX, cropY);
+  reportCanvasWrap.appendChild(reportImgCanvas);
+
+  // 填写数据表
+  var tiltAngleText = scale.estimatedTiltAngle > 0 ?
+    '约 ' + scale.estimatedTiltAngle.toFixed(0) + '°' : (scale.estimatedTiltAngle).toFixed(0) + '°';
+  var levelText = level ? level.angleDeg.toFixed(1) + '° ' + level.message : '--';
+  var rows = [
+    ['远用瞳距', pd !== null ? pd.toFixed(1) + ' mm' : '--', '水平比例尺'],
+    ['右单眼瞳距', mono ? mono.rightMonoPD.toFixed(1) + ' mm' : '--', mono && mono.asymmetry > 1.0 ? '⚠ 不对称' : ''],
+    ['左单眼瞳距', mono ? mono.leftMonoPD.toFixed(1) + ' mm' : '--', mono && mono.asymmetry > 1.0 ? '⚠ 不对称' : ''],
+    ['单眼不对称', mono ? mono.asymmetry.toFixed(1) + ' mm' : '--', mono && mono.asymmetry > 2.0 ? '🔴 需区分' : mono && mono.asymmetry > 1.0 ? '⚠ 建议区分' : ''],
+    ['右眼瞳高', phR !== null ? phR.toFixed(1) + ' mm' : '--', '垂直比例尺'],
+    ['左眼瞳高', phL !== null ? phL.toFixed(1) + ' mm' : '--', '垂直比例尺'],
+    ['镜圈宽度', appState.frameParams.lensWidth.toFixed(1) + ' mm', '手动输入'],
+    ['镜片高度', appState.frameParams.lensHeight.toFixed(1) + ' mm', '手动输入'],
+    ['中梁宽度', appState.frameParams.bridgeWidth.toFixed(1) + ' mm', '手动输入'],
+    ['双眼水平', levelText, level && level.isLevel ? '✅' : '⚠️'],
+    ['前倾角估计', tiltAngleText, scale.discrepancy > 0.08 ? '异常' : scale.discrepancy > 0.05 ? '稍大' : '正常'],
+    ['水平比例尺', scale.scaleHorizontal.toFixed(4) + ' mm/px', ''],
+    ['垂直比例尺', scale.scaleVertical.toFixed(4) + ' mm/px', ''],
+    ['比例尺偏差', (scale.discrepancy * 100).toFixed(1) + '%', scale.discrepancy > 0.08 ? '⚠️ 异常' : '正常'],
+  ];
+  if (cv && cv.deviation !== null) {
+    rows.push(['外院瞳距', appState.externalPD.toFixed(1) + ' mm', '手动输入']);
+    rows.push(['交叉验证偏差', cv.deviation.toFixed(2) + ' mm', cv.message.replace(/[🟢🟡🔴]/g, '').trim()]);
+  }
+
+  var tableHtml = '';
+  for (var r = 0; r < rows.length; r++) {
+    tableHtml += '<tr><td>' + rows[r][0] + '</td><td>' + rows[r][1] + '</td><td>' + rows[r][2] + '</td></tr>';
+  }
+  document.getElementById('report-table').innerHTML =
+    '<thead><tr><th>参数</th><th>测量值</th><th>备注</th></tr></thead><tbody>' + tableHtml + '</tbody>';
+
+  // 配镜建议
+  var suggestions = [];
+  suggestions.push('推荐镜片直径：≥ ' + (appState.frameParams.lensWidth + 10).toFixed(0) + ' mm（框宽+余量）');
+
+  if (mono && mono.asymmetry > 1.0) {
+    var asymNote = mono.asymmetry > 2.0 ? '⚠ 左右单眼瞳距差 ' + mono.asymmetry.toFixed(1) + 'mm（>2mm），配镜加工务必区分左右眼光学中心位移' :
+                   '⚠ 左右单眼瞳距差 ' + mono.asymmetry.toFixed(1) + 'mm，建议加工时区分左右眼';
+    suggestions.push(asymNote);
+  }
+
+  if (mono && appState.frameParams.lensWidth && appState.frameParams.bridgeWidth) {
+    var halfFrameCD = (appState.frameParams.lensWidth + appState.frameParams.bridgeWidth) / 2;
+    var decR = halfFrameCD - mono.rightMonoPD;
+    var decL = halfFrameCD - mono.leftMonoPD;
+    var dirR = decR > 0 ? '内移' : '外移';
+    var dirL = decL > 0 ? '内移' : '外移';
+    if (mono.asymmetry > 1.0) {
+      suggestions.push('光学中心位移建议：右眼' + dirR + ' ' + Math.abs(decR).toFixed(1) + ' mm，左眼' + dirL + ' ' + Math.abs(decL).toFixed(1) + ' mm（左右不对称，务必区分）');
+    } else {
+      suggestions.push('光学中心位移建议：双眼各' + dirR + '约 ' + Math.abs(decR).toFixed(1) + ' mm');
+    }
+  } else if (pd !== null && appState.frameParams.lensWidth && appState.frameParams.bridgeWidth) {
+    var halfFrameCD2 = (appState.frameParams.lensWidth + appState.frameParams.bridgeWidth) / 2;
+    var halfPD2 = pd / 2;
+    var decentration2 = halfFrameCD2 - halfPD2;
+    if (decentration2 !== 0) {
+      var dir2 = decentration2 > 0 ? '内移' : '外移';
+      suggestions.push('光学中心位移建议：双眼各' + dir2 + '约 ' + Math.abs(decentration2).toFixed(1) + ' mm');
+    }
+  }
+
+  if (level && !level.isLevel) {
+    suggestions.push('⚠ 检测到双眼倾斜 ' + level.angleDeg.toFixed(1) + '°，建议在装配时校正水平');
+  }
+  if (scale.discrepancy > 0.05) {
+    suggestions.push('⚠ 比例尺偏差较大，建议确认标注精度后重新测量');
+  }
+
+  var sugHtml = '';
+  for (var s = 0; s < suggestions.length; s++) {
+    sugHtml += '<li>' + suggestions[s] + '</li>';
+  }
+  document.getElementById('report-suggestions').innerHTML = sugHtml;
+
+  // 编号和日期
+  var now = new Date();
+  document.getElementById('report-id').textContent = 'OM-' +
+    now.getFullYear() +
+    String(now.getMonth() + 1).padStart(2, '0') +
+    String(now.getDate()).padStart(2, '0') + '-' +
+    String(now.getHours()).padStart(2, '0') +
+    String(now.getMinutes()).padStart(2, '0') +
+    String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('report-date').textContent =
+    now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+
+  // 显示模态窗
+  dom.reportOverlay.classList.add('show');
+}
+
+/** 绘制带标注叠加的分析图（用于报告），所有坐标使用画布像素，cropX/cropY 为裁剪原点 */
+function drawAnnotatedImage(ctx, pd, mono, phR, phL, s, cw, ch, cropX, cropY) {
+  function cx(x) { return (x - cropX) * s; }
+  function cy(y) { return (y - cropY) * s; }
+
+  // 绘制镜圈框线（轴对齐矩形）
+  ['right', 'left'].forEach(function(eye) {
+    var top = appState.landmarks[eye + '_frame_top'];
+    var bottom = appState.landmarks[eye + '_frame_bottom'];
+    var inner = appState.landmarks[eye + '_frame_inner'];
+    var outer = appState.landmarks[eye + '_frame_outer'];
+    if (!top.placed || !bottom.placed || !inner.placed || !outer.placed) return;
+
+    var leftX = Math.min(cx(inner.x), cx(outer.x));
+    var rightX = Math.max(cx(inner.x), cx(outer.x));
+    var topY = Math.min(cy(top.y), cy(bottom.y));
+    var bottomY = Math.max(cy(top.y), cy(bottom.y));
+
+    ctx.fillStyle = 'rgba(74,144,217,0.08)';
+    ctx.fillRect(leftX, topY, rightX - leftX, bottomY - topY);
+    ctx.strokeStyle = '#4A90D9';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(leftX, topY, rightX - leftX, bottomY - topY);
+    ctx.setLineDash([]);
+  });
+
+  // 绘制瞳孔图标
+  ['right', 'left'].forEach(function(eye) {
+    var lm = appState.landmarks[eye + '_pupil'];
+    if (!lm.placed) return;
+    var rx = cx(lm.x);
+    var ry = cy(lm.y);
+    var r = 15;
+
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.lineWidth = 0.75;
+    ctx.beginPath(); ctx.arc(rx, ry, r, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(241,196,15,0.8)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.arc(rx, ry, 4, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.strokeStyle = '#E74C3C';
+    ctx.lineWidth = 0.75;
+    ctx.beginPath();
+    ctx.moveTo(rx - r - 5, ry); ctx.lineTo(rx + r + 5, ry);
+    ctx.moveTo(rx, ry - r - 5); ctx.lineTo(rx, ry + r + 5);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  // 双眼水平线
+  var rp = appState.landmarks.right_pupil;
+  var lp = appState.landmarks.left_pupil;
+  if (rp.placed && lp.placed) {
+    ctx.strokeStyle = '#27AE60';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(cx(rp.x), cy(rp.y));
+    ctx.lineTo(cx(lp.x), cy(lp.y));
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 镜架中心线
+  var ri = appState.landmarks.right_frame_inner;
+  var li = appState.landmarks.left_frame_inner;
+  if (ri.placed && li.placed) {
+    var frameCenterX = (ri.x + li.x) / 2;
+    var ccx = cx(frameCenterX);
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(ccx, 0);
+    ctx.lineTo(ccx, ch);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // 瞳距双向箭头
+  if (pd !== null && rp.placed && lp.placed) {
+    var midCY = (cy(rp.y) + cy(lp.y)) / 2;
+    var arrowCY = midCY - 40;
+    var rpx = cx(rp.x);
+    var lpx = cx(lp.x);
+    ctx.strokeStyle = '#E74C3C';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(rpx, arrowCY); ctx.lineTo(lpx, arrowCY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#E74C3C';
+    ctx.beginPath(); ctx.arc(rpx, arrowCY, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(lpx, arrowCY, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.font = 'bold 14px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#E74C3C';
+    ctx.textAlign = 'center';
+    ctx.fillText('PD: ' + pd.toFixed(1) + 'mm', (rpx + lpx) / 2, arrowCY - 8);
+  }
+
+  // 单眼瞳距 RPD / LPD 箭头
+  if (mono && rp.placed && lp.placed && ri.placed && li.placed) {
+    var fcX = (ri.x + li.x) / 2;
+    var fccx = cx(fcX);
+    var rpdCy = cy(rp.y + 8);
+    var lpdCy = cy(lp.y + 8);
+    var rpCx = cx(rp.x);
+    var lpCx = cx(lp.x);
+
+    // RPD: 中心线 → 右瞳孔
+    ctx.strokeStyle = '#E74C3C';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(fccx, rpdCy); ctx.lineTo(rpCx, rpdCy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#E74C3C';
+    ctx.beginPath(); ctx.arc(fccx, rpdCy, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(rpCx, rpdCy, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.font = 'bold 12px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#E74C3C';
+    ctx.textAlign = 'center';
+    ctx.fillText('RPD: ' + mono.rightMonoPD.toFixed(1), (fccx + rpCx) / 2, rpdCy - 6);
+
+    // LPD: 左瞳孔 → 中心线
+    ctx.strokeStyle = '#E74C3C';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(lpCx, lpdCy); ctx.lineTo(fccx, lpdCy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#E74C3C';
+    ctx.beginPath(); ctx.arc(lpCx, lpdCy, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(fccx, lpdCy, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillText('LPD: ' + mono.leftMonoPD.toFixed(1), (lpCx + fccx) / 2, lpdCy - 6);
+  }
+
+  // 瞳高标注
+  ['right', 'left'].forEach(function(eye) {
+    var pupil = appState.landmarks[eye + '_pupil'];
+    var frameBottom = appState.landmarks[eye + '_frame_bottom'];
+    if (!pupil.placed || !frameBottom.placed) return;
+    var ph = eye === 'right' ? phR : phL;
+    if (ph === null) return;
+
+    var lx = cx(pupil.x) + (eye === 'right' ? -30 : 30);
+    var topCY = cy(pupil.y);
+    var botCY = cy(frameBottom.y);
+    ctx.strokeStyle = '#F39C12';
+    ctx.lineWidth = 0.75;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(lx, botCY); ctx.lineTo(lx, topCY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#F39C12';
+    ctx.beginPath(); ctx.arc(lx, botCY, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(lx, topCY, 1.5, 0, Math.PI * 2); ctx.fill();
+    ctx.font = 'bold 12px "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = '#F39C12';
+    if (eye === 'right') {
+      ctx.textAlign = 'right';
+      ctx.fillText('PH: ' + ph.toFixed(1) + 'mm', lx - 6, (topCY + botCY) / 2 + 4);
+    } else {
+      ctx.textAlign = 'left';
+      ctx.fillText('PH: ' + ph.toFixed(1) + 'mm', lx + 6, (topCY + botCY) / 2 + 4);
+    }
+  });
+
+  // 中梁连线
+  var ri = appState.landmarks.right_frame_inner;
+  var li = appState.landmarks.left_frame_inner;
+  if (ri.placed && li.placed) {
+    ctx.strokeStyle = '#4A90D9';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([3, 3]);
+    var bridgeCY = (cy(ri.y) + cy(li.y)) / 2;
+    ctx.beginPath(); ctx.moveTo(cx(ri.x), bridgeCY); ctx.lineTo(cx(li.x), bridgeCY); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+async function saveReportAsImage() {
+  var reportEl = document.getElementById('report-container');
+  var closeBtn = document.getElementById('report-close');
+  var saveBtn = document.getElementById('report-save');
+  try {
+    // 隐藏按钮再截图，发给顾客的图片不应包含操作按钮
+    closeBtn.style.display = 'none';
+    saveBtn.style.display = 'none';
+    var canvas = await html2canvas(reportEl, {
+      scale: 2,
+      backgroundColor: '#ffffff',
+      useCORS: true,
+      allowTaint: true,
+    });
+    closeBtn.style.display = '';
+    saveBtn.style.display = '';
+    var link = document.createElement('a');
+    var timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    link.download = '戴镜测量AI分析报告_' + timestamp + '.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+    toast('报告已保存', 'info');
+  } catch (err) {
+    closeBtn.style.display = '';
+    saveBtn.style.display = '';
+    toast('保存失败：' + err.message, 'error');
+  }
+}
+
+function closeReport() {
+  dom.reportOverlay.classList.remove('show');
+}
+
+// ============================================================================
+//  XX. 按钮事件绑定
+// ============================================================================
+
+function bindEvents() {
+  dom.btnLoad.addEventListener('click', function() { dom.fileInput.click(); });
+  dom.fileInput.addEventListener('change', function() {
+    if (dom.fileInput.files.length > 0) { loadImageFile(dom.fileInput.files[0]); }
+    dom.fileInput.value = '';
+  });
+
+  dom.btnUndo.addEventListener('click', undo);
+  dom.btnReset.addEventListener('click', function() {
+    if (countPlaced() === 0) return;
+    if (confirm('确定要重置所有标注吗？此操作不可撤销。')) {
+      resetAll();
+      redraw();
+      updatePanel();
+      updateStatusBar();
+      showStepHint();
+    }
+  });
+  dom.btnReport.addEventListener('click', generateReport);
+
+  // 参数输入
+  [dom.paramLensWidth, dom.paramBridgeWidth, dom.paramLensHeight].forEach(function(inp) {
+    inp.addEventListener('input', readFrameParams);
+    inp.addEventListener('change', readFrameParams);
+  });
+  dom.paramExternalPD.addEventListener('input', function() {
+    readExternalPD();
+    updateCrossValidation();
+  });
+  dom.paramExternalPD.addEventListener('change', function() {
+    readExternalPD();
+    updateCrossValidation();
+  });
+
+  // 报告模态窗
+  dom.reportClose.addEventListener('click', closeReport);
+  dom.reportOverlay.addEventListener('click', function(e) {
+    if (e.target === dom.reportOverlay) closeReport();
+  });
+  dom.reportSave.addEventListener('click', saveReportAsImage);
+
+  // Canvas 鼠标事件
+  dom.canvas.addEventListener('mousedown', onCanvasMouseDown);
+  dom.canvas.addEventListener('mousemove', onCanvasMouseMove);
+  window.addEventListener('mouseup', onCanvasMouseUp);
+  dom.canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
+  dom.canvas.addEventListener('contextmenu', onCanvasContextMenu);
+  dom.canvas.addEventListener('mouseleave', onCanvasMouseLeave);
+  dom.canvas.addEventListener('mouseenter', onCanvasMouseEnter);
+
+  // 拖拽文件
+  dom.container.addEventListener('dragover', onDragOver);
+  dom.container.addEventListener('drop', onDrop);
+  // 也可拖拽到整个窗口
+  window.addEventListener('dragover', function(e) { e.preventDefault(); });
+  window.addEventListener('drop', function(e) {
+    e.preventDefault();
+    if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+      loadImageFile(e.dataTransfer.files[0]);
+    }
+  });
+
+  // 键盘事件
+  window.addEventListener('keydown', onKeyDown);
+  window.addEventListener('keyup', onKeyUp);
+
+  // 窗口大小变化
+  window.addEventListener('resize', function() {
+    resizeCanvas();
+    redraw();
+  });
+
+  // 键盘快捷键阻止浏览器默认行为（空格滚动）
+  window.addEventListener('keydown', function(e) {
+    if (e.code === 'Space' && e.target === document.body) {
+      e.preventDefault();
+    }
+  });
+}
+
+// ============================================================================
+//  XXI. 初始化
+// ============================================================================
+
+function init() {
+  resizeCanvas();
+  dom.ctx = dom.canvas.getContext('2d');
+  dom.magnifierCtx = dom.magnifierCanvas.getContext('2d');
+  resetAll();
+  bindEvents();
+  redraw();
+  updatePanel();
+  updateStatusBar();
+
+  // 检查 Canvas 支持
+  if (!dom.ctx) {
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;font-size:18px;color:#e74c3c;">' +
+      '您的浏览器不支持 Canvas，请使用 Chrome / Edge / Firefox 最新版</div>';
+    return;
+  }
+}
+
+// 启动
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+
+</body>
+</html>
